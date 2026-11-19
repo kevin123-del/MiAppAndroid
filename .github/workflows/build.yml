@@ -21,7 +21,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.9' # <--- AQUÍ ESTÁ LA MAGIA
+          gradle-version: '8.9'
 
       # --- CREANDO CARPETAS ---
       - name: Create directories
@@ -30,6 +30,15 @@ jobs:
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/xml
+
+      # --- ARCHIVO DE PROPIEDADES (EL QUE FALTABA) ---
+      - name: Create gradle.properties
+        run: |
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
 
       # --- ARCHIVOS DE CONFIGURACIÓN ---
       - name: Create build.gradle
@@ -297,3 +306,4 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+        
