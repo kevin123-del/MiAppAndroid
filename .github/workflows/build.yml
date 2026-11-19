@@ -249,7 +249,6 @@ jobs:
                   super.onResume(); 
                   findViewById<TextView>(R.id.tvLog)?.text = RegistrarLog.obtenerTexto() 
                   
-                  // Sincronizar switch sin bucles
                   val estaActivo = InDriveAccessibilityService.instancia?.isBotActivo() ?: false
                   if (switchMaster.isChecked != estaActivo) {
                       switchMaster.setOnCheckedChangeListener(null)
@@ -276,33 +275,31 @@ jobs:
           class InDriveAccessibilityService : AccessibilityService() {
               companion object {
                   @Volatile var instancia: InDriveAccessibilityService? = null; private set
+                  @Volatile var botActivoGlobal = false
               }
               private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
               private lateinit var repo: SettingsRepository
-              private var botActivo = false
               private var ventana: android.view.View? = null
               private var ultimoProcesamiento = 0L
 
               override fun onServiceConnected() { super.onServiceConnected(); instancia = this; repo = SettingsRepository(applicationContext) }
               
-              fun isBotActivo() = botActivo
+              fun isBotActivo() = botActivoGlobal
               fun setBotActivo(activo: Boolean) { 
-                  if (botActivo == activo) return 
-                  botActivo = activo
+                  botActivoGlobal = activo
                   val sw = ventana?.findViewById<Switch>(R.id.switchBot)
                   if (sw != null && sw.isChecked != activo) { sw.isChecked = activo }
                   RegistrarLog.agregar(if(activo) "BOT ENCENDIDO" else "BOT APAGADO") 
               }
 
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-                  if (event?.packageName?.toString() != "sinet.startup.inDriver" || !botActivo) return
+                  if (event?.packageName?.toString() != "sinet.startup.inDriver" || !botActivoGlobal) return
                   
-                  // ¡Velocidad! Bajar a 500ms para no perder ofertas rápidas
-                  if (System.currentTimeMillis() - ultimoProcesamiento < 500) return 
+                  // Velocidad: 300ms para no perder ofertas rápidas
+                  if (System.currentTimeMillis() - ultimoProcesamiento < 300) return 
 
                   val root = rootInActiveWindow ?: return
                   
-                  // Solo actuar si estamos en la pantalla de la oferta (botones verdes)
                   val btnAceptar = buscarBoton(root, listOf("Aceptar por"))
                   val btnOfertar = buscarBoton(root, listOf("Ofrece tu tarifa", "Ofertar"))
                   
@@ -319,7 +316,6 @@ jobs:
               private fun procesarOferta(root: AccessibilityNodeInfo, textoCompleto: String, btnAceptar: AccessibilityNodeInfo?, btnOfertar: AccessibilityNodeInfo?) {
                   ultimoProcesamiento = System.currentTimeMillis()
                   
-                  // Precio
                   val precioRegex = Regex("""(?:COL\$|COP|\$)\s*([\d.,]+)""")
                   var precio = precioRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.replace(",", "")?.toIntOrNull()
                   if (precio == null) {
@@ -327,22 +323,23 @@ jobs:
                       precio = fallbackRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.toIntOrNull()
                   }
 
-                  // LA MAGIA: Buscar usando las letras A y B
-                  val regexA = Regex("""\bA\b.*?([\d]+(?:[.,]\d+)?)\s*(km|m)\b""", RegexOption.IGNORE_CASE)
-                  val regexB = Regex("""\bB\b.*?([\d]+(?:[.,]\d+)?)\s*(km|m)\b""", RegexOption.IGNORE_CASE)
-                  
-                  val matchA = regexA.find(textoCompleto)
-                  val matchB = regexB.find(textoCompleto)
+                  // MAGIA: Encontrar todos los números seguidos de km, m, metros, etc.
+                  val regexDistancia = Regex("""([\d]+(?:[.,]\d+)?)\s*(km|m|metros|mts)\b""", RegexOption.IGNORE_CASE)
+                  val matches = regexDistancia.findAll(textoCompleto).map { match ->
+                      val valor = match.groupValues[1].replace(",", ".").toDoubleOrNull() ?: 0.0
+                      val unidad = match.groupValues[2].lowercase()
+                      if ((unidad == "m" || unidad == "metros" || unidad == "mts") && valor > 10) valor / 1000.0 else valor
+                  }.filter { it >= 0.0 }.toList()
 
-                  if (precio != null && matchA != null && matchB != null) {
-                      val recogidaKm = convertirAKm(matchA.groupValues[1], matchA.groupValues[2])
-                      val viajeKm = convertirAKm(matchB.groupValues[1], matchB.groupValues[2])
+                  // En InDrive las primeras dos distancias son Recogida y Viaje
+                  if (precio != null && matches.size >= 2) {
+                      val recogidaKm = matches[0]
+                      val viajeKm = matches[1]
 
                       RegistrarLog.agregar("Oferta: $precio COP | Rec: $recogidaKm km | Viaje: $viajeKm km")
 
                       scope.launch {
                           val a = repo.leerAjustes()
-                          // Pausa un poco más corta para no perder la oferta
                           delay((1000..2000).random().toLong())
 
                           if (recogidaKm > a.maxRecogidaKm) {
@@ -359,7 +356,7 @@ jobs:
                               RegistrarLog.agregar("Decisión: OFERTAR ($montoOferta COP)")
                               if (btnOfertar != null) {
                                   tocar(btnOfertar)
-                                  delay(1000)
+                                  delay(800)
                                   val root2 = rootInActiveWindow
                                   if (root2 != null) {
                                       val input = buscarEditText(root2)
@@ -367,7 +364,7 @@ jobs:
                                           val args = android.os.Bundle()
                                           args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, montoOferta.toString())
                                           input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                                          delay(500)
+                                          delay(400)
                                           buscarBoton(root2, listOf("Enviar"))?.let { tocar(it) }
                                       }
                                   }
@@ -375,13 +372,9 @@ jobs:
                           }
                       }
                   } else {
-                      RegistrarLog.agregar("Fallo -> Precio: $precio, PtoA: ${matchA?.groupValues?.get(1)}, PtoB: ${matchB?.groupValues?.get(1)}")
+                      RegistrarLog.agregar("Fallo -> Precio: $precio, Kms encontrados: $matches")
+                      RegistrarLog.agregar("Veo: ${textoCompleto.take(40)}")
                   }
-              }
-
-              private fun convertirAKm(valorStr: String, unidad: String): Double {
-                  val valor = valorStr.replace(",", ".").toDoubleOrNull() ?: 0.0
-                  return if (unidad.lowercase() == "m") valor / 1000.0 else valor
               }
 
               override fun onInterrupt() = Unit
@@ -393,13 +386,13 @@ jobs:
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager; val v = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater).inflate(R.layout.floating_toggle, null)
                   val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
                   
-                  // Ahora el botón flotante se queda fijo en la parte de arriba a la derecha, fuera de los botones de InDrive
+                  // Lo puse arriba a la derecha para que no estorbe
                   params.gravity = android.view.Gravity.TOP or android.view.Gravity.END
                   params.x = 20
-                  params.y = 200 
+                  params.y = 150 
                   
                   val sw = v.findViewById<Switch>(R.id.switchBot)
-                  sw.isChecked = botActivo
+                  sw.isChecked = botActivoGlobal
                   sw.setOnCheckedChangeListener { _, c -> setBotActivo(c) }
                   wm.addView(v, params); ventana = v
               }
@@ -408,9 +401,7 @@ jobs:
               private fun buscarBoton(n: AccessibilityNodeInfo, claves: List<String>): AccessibilityNodeInfo? {
                   val t = n.text?.toString() ?: ""
                   val d = n.contentDescription?.toString() ?: ""
-                  for (k in claves) {
-                      if (t.contains(k, true) || d.contains(k, true)) return n
-                  }
+                  for (k in claves) { if (t.contains(k, true) || d.contains(k, true)) return n }
                   for (i in 0 until n.childCount) buscarBoton(n.getChild(i) ?: continue, claves)?.let { return it }
                   return null
               }
