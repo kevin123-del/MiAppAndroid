@@ -124,7 +124,7 @@ jobs:
                       <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp" android:gravity="center">
                           <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Estado del Bot" android:textSize="18sp" android:textStyle="bold" />
                           <Switch android:id="@+id/switchMaster" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:scaleX="1.5" android:scaleY="1.5" />
-                          <Button android:id="@+id/btnToggleServicio" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Mostrar Botón Flotante en Pantalla" />
+                          <Button android:id="@+id/btnToggleServicio" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Mostrar Botón Flotante" />
                       </LinearLayout>
                   </com.google.android.material.card.MaterialCardView>
                   <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp" app:cardCornerRadius="12dp" xmlns:app="http://schemas.android.com/apk/res-auto">
@@ -138,8 +138,8 @@ jobs:
                           <Button android:id="@+id/btnGuardar" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Guardar Parámetros" android:backgroundTint="#FF9800" />
                       </LinearLayout>
                   </com.google.android.material.card.MaterialCardView>
-                  <Button android:id="@+id/btnPermisoOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Dar permiso flotante (Superponer)" />
-                  <Button android:id="@+id/btnAbrirAccesibilidad" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="2. Activar Servicio de Accesibilidad" />
+                  <Button android:id="@+id/btnPermisoOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Dar permiso flotante" />
+                  <Button android:id="@+id/btnAbrirAccesibilidad" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="2. Activar Accesibilidad" />
                   <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Registro de acciones:" android:textStyle="bold" android:paddingTop="16dp" />
                   <TextView android:id="@+id/tvLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:fontFamily="monospace" android:background="#1E1E1E" android:textColor="#00FF00" android:padding="8dp" android:minLines="5" android:text="(sin registros)" />
               </LinearLayout>
@@ -215,20 +215,27 @@ jobs:
           import kotlinx.coroutines.launch
           class MainActivity : AppCompatActivity() {
               private lateinit var repo: SettingsRepository
+              private lateinit var switchMaster: Switch
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
                   repo = SettingsRepository(this)
                   val etMax = findViewById<EditText>(R.id.etMaxRecogida); val etVal = findViewById<EditText>(R.id.etValorKm)
                   val etMinO = findViewById<EditText>(R.id.etMinOferta); val etMinA = findViewById<EditText>(R.id.etMinAceptable)
-                  val etCorto = findViewById<EditText>(R.id.etMaxViajeCorto); val tvLog = findViewById<TextView>(R.id.tvLog)
-                  val switchMaster = findViewById<Switch>(R.id.switchMaster)
+                  val etCorto = findViewById<EditText>(R.id.etMaxViajeCorto)
+                  switchMaster = findViewById(R.id.switchMaster)
+                  
                   lifecycleScope.launch {
                       val a = repo.leerAjustes()
                       etMax.setText(a.maxRecogidaKm.toString()); etVal.setText(a.valorPorKm.toString())
                       etMinO.setText(a.minOferta.toString()); etMinA.setText(a.minAceptable.toString()); etCorto.setText(a.maxViajeCortoKm.toString())
                   }
-                  switchMaster.setOnCheckedChangeListener { _, isChecked -> InDriveAccessibilityService.instancia?.setBotActivo(isChecked) }
+                  
+                  switchMaster.setOnCheckedChangeListener { _, isChecked -> 
+                      InDriveAccessibilityService.instancia?.setBotActivo(isChecked) 
+                  }
+                  
                   findViewById<Button>(R.id.btnGuardar).setOnClickListener {
                       val a = Ajustes(etMax.text.toString().replace(",", ".").toDoubleOrNull() ?: 3.0, etVal.text.toString().toIntOrNull() ?: 1200, etMinO.text.toString().toIntOrNull() ?: 4800, etMinA.text.toString().toIntOrNull() ?: 4000, etCorto.text.toString().replace(",", ".").toDoubleOrNull() ?: 2.0)
                       lifecycleScope.launch { repo.guardarAjustes(a); Toast.makeText(this@MainActivity, "Guardado", Toast.LENGTH_SHORT).show() }
@@ -237,11 +244,17 @@ jobs:
                   findViewById<Button>(R.id.btnAbrirAccesibilidad).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                   findViewById<Button>(R.id.btnToggleServicio).setOnClickListener { InDriveAccessibilityService.instancia?.alternarVentanaFlotante() ?: Toast.makeText(this, "Activa la accesibilidad primero", Toast.LENGTH_SHORT).show() }
               }
+              
               override fun onResume() { 
                   super.onResume(); 
                   findViewById<TextView>(R.id.tvLog)?.text = RegistrarLog.obtenerTexto() 
-                  // Sincronizar el switch maestro cuando vuelve a la app
-                  findViewById<Switch>(R.id.switchMaster)?.isChecked = InDriveAccessibilityService.instancia?.isBotActivo() ?: false
+                  // Sincronización perfecta sin bucles
+                  val estaActivo = InDriveAccessibilityService.instancia?.isBotActivo() ?: false
+                  if (switchMaster.isChecked != estaActivo) {
+                      switchMaster.setOnCheckedChangeListener(null)
+                      switchMaster.isChecked = estaActivo
+                      switchMaster.setOnCheckedChangeListener { _, isChecked -> InDriveAccessibilityService.instancia?.setBotActivo(isChecked) }
+                  }
               }
           }
           EOF
@@ -273,8 +286,12 @@ jobs:
               
               fun isBotActivo() = botActivo
               fun setBotActivo(activo: Boolean) { 
+                  if (botActivo == activo) return 
                   botActivo = activo
-                  ventana?.findViewById<Switch>(R.id.switchBot)?.isChecked = activo
+                  val sw = ventana?.findViewById<Switch>(R.id.switchBot)
+                  if (sw != null && sw.isChecked != activo) {
+                      sw.isChecked = activo
+                  }
                   RegistrarLog.agregar(if(activo) "BOT ENCENDIDO" else "BOT APAGADO") 
               }
 
@@ -283,12 +300,10 @@ jobs:
                   if (System.currentTimeMillis() - ultimoProcesamiento < 3000) return 
 
                   val root = rootInActiveWindow ?: return
-                  
-                  // REGLA DE ORO: Solo procesar si vemos los botones de acción
                   val btnAceptar = buscarBoton(root, "Aceptar por")
                   val btnOfertar = buscarBoton(root, "Ofrece tu tarifa") ?: buscarBoton(root, "Ofertar")
                   
-                  if (btnAceptar == null && btnOfertar == null) return // Si estamos en la lista, ignorar
+                  if (btnAceptar == null && btnOfertar == null) return 
 
                   val textos = mutableListOf<String>()
                   fun rec(n: AccessibilityNodeInfo) { n.text?.toString()?.let { if(it.isNotBlank()) textos.add(it) }; for (i in 0 until n.childCount) n.getChild(i)?.let { rec(it) } }
@@ -308,14 +323,10 @@ jobs:
                       precio = fallbackRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.toIntOrNull()
                   }
 
-                  // Acepta tanto punto como coma para los decimales de km
-                  val kms = Regex("""([\d.,]+)\s*km""").findAll(textoCompleto)
-                      .mapNotNull { 
-                          val raw = it.groupValues[1]
-                          // Si tiene coma, asumimos que es decimal. Si tiene punto, también.
-                          val clean = raw.replace(",", ".")
-                          clean.toDoubleOrNull() 
-                      }.toList()
+                  // Extracción brutal de distancias (busca cualquier número seguido de km)
+                  val kms = Regex("""([\d]+[.,]?[\d]*)\s*(?:km|Km|KM)""").findAll(textoCompleto)
+                      .mapNotNull { it.groupValues[1].replace(",", ".").toDoubleOrNull() }
+                      .toList()
 
                   if (precio != null && kms.size >= 2) {
                       val recogidaKm = kms[0]
@@ -357,7 +368,9 @@ jobs:
                           }
                       }
                   } else {
+                      // Si falla, imprimimos lo que vio para depurar
                       RegistrarLog.agregar("Fallo. Precio: $precio, Kms: $kms")
+                      RegistrarLog.agregar("Veo: ${textoCompleto.take(50)}")
                   }
               }
 
@@ -369,10 +382,9 @@ jobs:
               private fun mostrarVentanaFlotante() {
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager; val v = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater).inflate(R.layout.floating_toggle, null)
                   val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
-                  // Posición corregida: Esquina inferior derecha, con buen margen
                   params.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-                  params.x = 80
-                  params.y = 250 
+                  params.x = 50
+                  params.y = 300
                   
                   val sw = v.findViewById<Switch>(R.id.switchBot)
                   sw.isChecked = botActivo
