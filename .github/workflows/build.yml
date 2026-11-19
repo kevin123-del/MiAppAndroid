@@ -237,7 +237,12 @@ jobs:
                   findViewById<Button>(R.id.btnAbrirAccesibilidad).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                   findViewById<Button>(R.id.btnToggleServicio).setOnClickListener { InDriveAccessibilityService.instancia?.alternarVentanaFlotante() ?: Toast.makeText(this, "Activa la accesibilidad primero", Toast.LENGTH_SHORT).show() }
               }
-              override fun onResume() { super.onResume(); findViewById<TextView>(R.id.tvLog)?.text = RegistrarLog.obtenerTexto() }
+              override fun onResume() { 
+                  super.onResume(); 
+                  findViewById<TextView>(R.id.tvLog)?.text = RegistrarLog.obtenerTexto() 
+                  // Sincronizar el switch maestro cuando vuelve a la app
+                  findViewById<Switch>(R.id.switchMaster)?.isChecked = InDriveAccessibilityService.instancia?.isBotActivo() ?: false
+              }
           }
           EOF
 
@@ -265,40 +270,52 @@ jobs:
               private var ultimoProcesamiento = 0L
 
               override fun onServiceConnected() { super.onServiceConnected(); instancia = this; repo = SettingsRepository(applicationContext) }
-              fun setBotActivo(activo: Boolean) { botActivo = activo; RegistrarLog.agregar(if(activo) "BOT ENCENDIDO" else "BOT APAGADO") }
+              
+              fun isBotActivo() = botActivo
+              fun setBotActivo(activo: Boolean) { 
+                  botActivo = activo
+                  ventana?.findViewById<Switch>(R.id.switchBot)?.isChecked = activo
+                  RegistrarLog.agregar(if(activo) "BOT ENCENDIDO" else "BOT APAGADO") 
+              }
 
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
                   if (event?.packageName?.toString() != "sinet.startup.inDriver" || !botActivo) return
-                  if (System.currentTimeMillis() - ultimoProcesamiento < 4000) return 
+                  if (System.currentTimeMillis() - ultimoProcesamiento < 3000) return 
 
                   val root = rootInActiveWindow ?: return
+                  
+                  // REGLA DE ORO: Solo procesar si vemos los botones de acción
+                  val btnAceptar = buscarBoton(root, "Aceptar por")
+                  val btnOfertar = buscarBoton(root, "Ofrece tu tarifa") ?: buscarBoton(root, "Ofertar")
+                  
+                  if (btnAceptar == null && btnOfertar == null) return // Si estamos en la lista, ignorar
+
                   val textos = mutableListOf<String>()
                   fun rec(n: AccessibilityNodeInfo) { n.text?.toString()?.let { if(it.isNotBlank()) textos.add(it) }; for (i in 0 until n.childCount) n.getChild(i)?.let { rec(it) } }
                   rec(root)
                   val textoCompleto = textos.joinToString(" ")
 
-                  if (textoCompleto.contains("Aceptar por", ignoreCase = true) || textoCompleto.contains("Ofrece tu tarifa", ignoreCase = true)) {
-                      procesarOferta(root, textoCompleto)
-                  }
+                  procesarOferta(root, textoCompleto, btnAceptar, btnOfertar)
               }
 
-              private fun procesarOferta(root: AccessibilityNodeInfo, textoCompleto: String) {
+              private fun procesarOferta(root: AccessibilityNodeInfo, textoCompleto: String, btnAceptar: AccessibilityNodeInfo?, btnOfertar: AccessibilityNodeInfo?) {
                   ultimoProcesamiento = System.currentTimeMillis()
                   
-                  // 1. Buscar el precio de forma más flexible (ej. COL$ 6.550 o COP 6550)
                   val precioRegex = Regex("""(?:COL\$|COP|\$)\s*([\d.,]+)""")
                   var precio = precioRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.replace(",", "")?.toIntOrNull()
-                  
-                  // Si falla, buscar cualquier número con formato 6.550
                   if (precio == null) {
                       val fallbackRegex = Regex("""\b(\d{1,3}(?:\.\d{3})+)\b""")
                       precio = fallbackRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.toIntOrNull()
                   }
 
-                  // 2. Buscar distancias (ej. 0,6 km)
-                  val kms = Regex("""([\d,]+)\s*km""").findAll(textoCompleto)
-                      .mapNotNull { it.groupValues[1].replace(",", ".").toDoubleOrNull() }
-                      .toList()
+                  // Acepta tanto punto como coma para los decimales de km
+                  val kms = Regex("""([\d.,]+)\s*km""").findAll(textoCompleto)
+                      .mapNotNull { 
+                          val raw = it.groupValues[1]
+                          // Si tiene coma, asumimos que es decimal. Si tiene punto, también.
+                          val clean = raw.replace(",", ".")
+                          clean.toDoubleOrNull() 
+                      }.toList()
 
                   if (precio != null && kms.size >= 2) {
                       val recogidaKm = kms[0]
@@ -317,14 +334,13 @@ jobs:
 
                           if (viajeKm <= a.maxViajeCortoKm && precio >= a.minAceptable) {
                               RegistrarLog.agregar("Decisión: ACEPTAR ($precio COP)")
-                              buscarBoton(root, "Aceptar por")?.let { tocar(it) }
+                              btnAceptar?.let { tocar(it) }
                           } else {
                               val calculado = viajeKm * a.valorPorKm
                               val montoOferta = (maxOf(calculado, a.minOferta.toDouble()) / 100.0).roundToInt() * 100
                               RegistrarLog.agregar("Decisión: OFERTAR ($montoOferta COP)")
-                              val btnOferta = buscarBoton(root, "Ofrece tu tarifa") ?: buscarBoton(root, "Ofertar")
-                              if (btnOferta != null) {
-                                  tocar(btnOferta)
+                              if (btnOfertar != null) {
+                                  tocar(btnOfertar)
                                   delay(1000)
                                   val root2 = rootInActiveWindow
                                   if (root2 != null) {
@@ -349,15 +365,18 @@ jobs:
               override fun onDestroy() { instancia = null; scope.cancel(); ocultarVentanaFlotante(); super.onDestroy() }
               
               fun alternarVentanaFlotante() { if (ventana != null) ocultarVentanaFlotante() else mostrarVentanaFlotante() }
+              
               private fun mostrarVentanaFlotante() {
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager; val v = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater).inflate(R.layout.floating_toggle, null)
                   val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
-                  // Mover a la esquina inferior derecha para que no estorbe
+                  // Posición corregida: Esquina inferior derecha, con buen margen
                   params.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-                  params.x = 50
-                  params.y = 300
-                  v.findViewById<Switch>(R.id.switchBot).isChecked = botActivo
-                  v.findViewById<Switch>(R.id.switchBot).setOnCheckedChangeListener { _, c -> setBotActivo(c) }
+                  params.x = 80
+                  params.y = 250 
+                  
+                  val sw = v.findViewById<Switch>(R.id.switchBot)
+                  sw.isChecked = botActivo
+                  sw.setOnCheckedChangeListener { _, c -> setBotActivo(c) }
                   wm.addView(v, params); ventana = v
               }
               private fun ocultarVentanaFlotante() { ventana?.let { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) }; ventana = null }
