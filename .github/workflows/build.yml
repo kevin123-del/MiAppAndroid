@@ -23,7 +23,6 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # --- CREANDO CARPETAS ---
       - name: Create directories
         run: |
           mkdir -p app/src/main/java/com/tuusuario/miapp
@@ -31,7 +30,6 @@ jobs:
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/xml
 
-      # --- ARCHIVO DE PROPIEDADES (EL QUE FALTABA) ---
       - name: Create gradle.properties
         run: |
           cat << 'EOF' > gradle.properties
@@ -40,7 +38,6 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-      # --- ARCHIVOS DE CONFIGURACIÓN ---
       - name: Create build.gradle
         run: |
           cat << 'EOF' > build.gradle
@@ -79,14 +76,13 @@ jobs:
           }
           EOF
 
-      # --- MANIFEST Y RECURSOS ---
       - name: Create AndroidManifest.xml
         run: |
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-              <application android:allowBackup="true" android:label="Bot" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+              <application android:allowBackup="true" android:label="Bot" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -123,16 +119,18 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp">
               <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Configuración del Bot" android:textSize="20sp" android:textStyle="bold" android:paddingBottom="12dp" />
                   <EditText android:id="@+id/etMaxRecogida" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Max recogida (km)" android:inputType="numberDecimal" />
-                  <EditText android:id="@+id/etValorKm" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Valor por km" android:inputType="number" />
-                  <EditText android:id="@+id/etMinOferta" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min oferta" android:inputType="number" />
-                  <EditText android:id="@+id/etMinAceptable" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min aceptable" android:inputType="number" />
+                  <EditText android:id="@+id/etValorKm" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Valor por km (COP)" android:inputType="number" />
+                  <EditText android:id="@+id/etMinOferta" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min oferta (COP)" android:inputType="number" />
+                  <EditText android:id="@+id/etMinAceptable" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min aceptable (COP)" android:inputType="number" />
                   <EditText android:id="@+id/etMaxViajeCorto" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Max viaje corto (km)" android:inputType="numberDecimal" />
-                  <Button android:id="@+id/btnGuardar" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Guardar" />
-                  <Button android:id="@+id/btnPermisoOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Permiso flotante" />
-                  <Button android:id="@+id/btnAbrirAccesibilidad" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Accesibilidad" />
-                  <Button android:id="@+id/btnToggleServicio" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Flotante" />
-                  <TextView android:id="@+id/tvLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:text="(sin registros)" />
+                  <Button android:id="@+id/btnGuardar" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Guardar ajustes" />
+                  <Button android:id="@+id/btnPermisoOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Dar permiso flotante" />
+                  <Button android:id="@+id/btnAbrirAccesibilidad" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="2. Activar Accesibilidad" />
+                  <Button android:id="@+id/btnToggleServicio" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="3. Mostrar botón flotante" />
+                  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Registro de acciones:" android:textStyle="bold" android:paddingTop="16dp" android:paddingBottom="8dp" />
+                  <TextView android:id="@+id/tvLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:fontFamily="monospace" android:text="(sin registros)" />
               </LinearLayout>
           </ScrollView>
           EOF
@@ -146,7 +144,6 @@ jobs:
           </LinearLayout>
           EOF
 
-      # --- CÓDIGO KOTLIN ---
       - name: Create Kotlin files
         run: |
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/Modelos.kt
@@ -227,7 +224,7 @@ jobs:
                   }
                   findViewById<Button>(R.id.btnAbrirAccesibilidad).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                   findViewById<Button>(R.id.btnToggleServicio).setOnClickListener {
-                      InDriveAccessibilityService.instancia?.alternarVentanaFlotante() ?: Toast.makeText(this, "Activa el servicio primero", Toast.LENGTH_SHORT).show()
+                      InDriveAccessibilityService.instancia?.alternarVentanaFlotante() ?: Toast.makeText(this, "Primero activa el servicio en Accesibilidad", Toast.LENGTH_LONG).show()
                   }
                   tvLog.text = RegistrarLog.obtenerTexto()
               }
@@ -241,14 +238,12 @@ jobs:
           import android.accessibilityservice.GestureDescription
           import android.graphics.Path
           import android.graphics.Rect
-          import android.os.Bundle
           import android.view.LayoutInflater
           import android.view.WindowManager
           import android.view.accessibility.AccessibilityEvent
           import android.view.accessibility.AccessibilityNodeInfo
           import android.widget.Switch
           import kotlinx.coroutines.*
-          import kotlin.math.roundToInt
           class InDriveAccessibilityService : AccessibilityService() {
               companion object {
                   @Volatile var instancia: InDriveAccessibilityService? = null; private set
@@ -297,7 +292,6 @@ jobs:
           }
           EOF
 
-      # --- COMPILAR Y ENTREGAR ---
       - name: Build APK
         run: gradle assembleDebug
 
@@ -306,4 +300,3 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-        
