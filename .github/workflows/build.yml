@@ -18,103 +18,282 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      # 1. Descomprimir el ZIP que subiste
-      - name: Unzip project
-        run: |
-          if [ -f MiAppAndroid.zip ]; then
-            unzip MiAppAndroid.zip -d .
-          fi
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
 
-      # 2. Forzar Gradle moderno
-      - name: Fix Gradle wrapper
+      # --- CREANDO CARPETAS ---
+      - name: Create directories
         run: |
-          mkdir -p MiAppAndroid/gradle/wrapper
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip" > MiAppAndroid/gradle/wrapper/gradle-wrapper.properties
+          mkdir -p app/src/main/java/com/tuusuario/miapp
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
 
-      # 3. Sobrescribir archivos de configuración raíz
-      - name: Overwrite root build.gradle
+      # --- ARCHIVOS DE CONFIGURACIÓN ---
+      - name: Create build.gradle
         run: |
-          cat << 'EOF' > MiAppAndroid/build.gradle
+          cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.5.0' apply false
               id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
           }
           EOF
-          cat << 'EOF' > MiAppAndroid/settings.gradle
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+          
+      - name: Create settings.gradle
+        run: |
+          cat << 'EOF' > settings.gradle
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
           rootProject.name = "MiAppAndroid"
           include ':app'
           EOF
 
-      # 4. Sobrescribir el build.gradle de la app
-      - name: Overwrite app build.gradle
+      - name: Create app/build.gradle
         run: |
-          cat << 'EOF' > MiAppAndroid/app/build.gradle
-          plugins {
-              id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
-          }
+          cat << 'EOF' > app/build.gradle
+          plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
           android {
               namespace 'com.tuusuario.miapp'
               compileSdk 34
-              defaultConfig {
-                  applicationId "com.tuusuario.miapp"
-                  minSdk 26
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
+              defaultConfig { applicationId "com.tuusuario.miapp"; minSdk 26; targetSdk 34; versionCode 1; versionName "1.0" }
+              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+              kotlinOptions { jvmTarget = '17' }
           }
           dependencies {
               implementation 'androidx.core:core-ktx:1.13.1'
               implementation 'androidx.appcompat:appcompat:1.7.0'
-              implementation 'com.google.android.material:material:1.12.0'
               implementation 'androidx.datastore:datastore-preferences:1.1.1'
               implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
               implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.4'
           }
           EOF
 
-      # 5. Quitar el paquete viejo del Manifest (Gradle moderno ya no lo permite ahí)
-      - name: Fix AndroidManifest
+      # --- MANIFEST Y RECURSOS ---
+      - name: Create AndroidManifest.xml
         run: |
-          sed -i 's/package="com.tuusuario.miapp"//g' MiAppAndroid/app/src/main/AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <application android:allowBackup="true" android:label="Bot" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service android:name=".InDriveAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="Bot">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
+                  </service>
+              </application>
+          </manifest>
+          EOF
 
-      # 6. Compilar
-      - name: Build APK
+      - name: Create accessibility_service_config.xml
         run: |
-          cd MiAppAndroid
-          chmod +x gradlew
-          ./gradlew assembleDebug
-          
-      # 7. Entregar el APK
+          cat << 'EOF' > app/src/main/res/xml/accessibility_service_config.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds"
+              android:canRetrieveWindowContent="true"
+              android:canPerformGestures="true"
+              android:notificationTimeout="200"
+              android:packageNames="sinet.startup.inDriver" />
+          EOF
+
+      - name: Create activity_main.xml
+        run: |
+          cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp">
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                  <EditText android:id="@+id/etMaxRecogida" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Max recogida (km)" android:inputType="numberDecimal" />
+                  <EditText android:id="@+id/etValorKm" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Valor por km" android:inputType="number" />
+                  <EditText android:id="@+id/etMinOferta" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min oferta" android:inputType="number" />
+                  <EditText android:id="@+id/etMinAceptable" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min aceptable" android:inputType="number" />
+                  <EditText android:id="@+id/etMaxViajeCorto" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Max viaje corto (km)" android:inputType="numberDecimal" />
+                  <Button android:id="@+id/btnGuardar" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Guardar" />
+                  <Button android:id="@+id/btnPermisoOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Permiso flotante" />
+                  <Button android:id="@+id/btnAbrirAccesibilidad" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Accesibilidad" />
+                  <Button android:id="@+id/btnToggleServicio" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Flotante" />
+                  <TextView android:id="@+id/tvLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:text="(sin registros)" />
+              </LinearLayout>
+          </ScrollView>
+          EOF
+
+      - name: Create floating_toggle.xml
+        run: |
+          cat << 'EOF' > app/src/main/res/layout/floating_toggle.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="#CC000000" android:padding="8dp" android:orientation="horizontal">
+              <Switch android:id="@+id/switchBot" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+          </LinearLayout>
+          EOF
+
+      # --- CÓDIGO KOTLIN ---
+      - name: Create Kotlin files
+        run: |
+          cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/Modelos.kt
+          package com.tuusuario.miapp
+          data class DatosOferta(val recogidaKm: Double, val viajeKm: Double, val precioOfertado: Int)
+          data class Ajustes(val maxRecogidaKm: Double, val valorPorKm: Int, val minOferta: Int, val minAceptable: Int, val maxViajeCortoKm: Double)
+          data class Decision(val accion: Accion, val monto: Int, val motivo: String)
+          enum class Accion { ACEPTAR, OFERTAR, IGNORAR }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/RegistrarLog.kt
+          package com.tuusuario.miapp
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+          object RegistrarLog {
+              private val entradas = mutableListOf<String>()
+              fun agregar(mensaje: String) {
+                  val hora = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                  synchronized(entradas) { entradas.add(0, "[$hora] $mensaje"); if(entradas.size>50) entradas.removeLast() }
+              }
+              fun obtenerTexto(): String = synchronized(entradas) { if (entradas.isEmpty()) "(vacío)" else entradas.joinToString("\n") }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/SettingsRepository.kt
+          package com.tuusuario.miapp
+          import android.content.Context
+          import androidx.datastore.preferences.core.*
+          import androidx.datastore.preferences.preferencesDataStore
+          import kotlinx.coroutines.flow.first
+          private val Context.dataStore by preferencesDataStore(name = "ajustes_bot")
+          class SettingsRepository(private val context: Context) {
+              companion object {
+                  val MAX_RECOGIDA = doublePreferencesKey("max_recogida"); val VALOR_POR_KM = intPreferencesKey("valor_km")
+                  val MIN_OFERTA = intPreferencesKey("min_oferta"); val MIN_ACEPTABLE = intPreferencesKey("min_aceptable"); val MAX_VIAJE_CORTO = doublePreferencesKey("max_viaje")
+              }
+              suspend fun leerAjustes(): Ajustes {
+                  val p = context.dataStore.data.first()
+                  return Ajustes(p[MAX_RECOGIDA] ?: 5.0, p[VALOR_POR_KM] ?: 1200, p[MIN_OFERTA] ?: 4800, p[MIN_ACEPTABLE] ?: 4000, p[MAX_VIAJE_CORTO] ?: 2.0)
+              }
+              suspend fun guardarAjustes(a: Ajustes) {
+                  context.dataStore.edit { p -> p[MAX_RECOGIDA] = a.maxRecogidaKm; p[VALOR_POR_KM] = a.valorPorKm; p[MIN_OFERTA] = a.minOferta; p[MIN_ACEPTABLE] = a.minAceptable; p[MAX_VIAJE_CORTO] = a.maxViajeCortoKm }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/MainActivity.kt
+          package com.tuusuario.miapp
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.*
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.lifecycle.lifecycleScope
+          import kotlinx.coroutines.launch
+          class MainActivity : AppCompatActivity() {
+              private lateinit var repo: SettingsRepository
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+                  repo = SettingsRepository(this)
+                  val etMax = findViewById<EditText>(R.id.etMaxRecogida); val etVal = findViewById<EditText>(R.id.etValorKm)
+                  val etMinO = findViewById<EditText>(R.id.etMinOferta); val etMinA = findViewById<EditText>(R.id.etMinAceptable)
+                  val etCorto = findViewById<EditText>(R.id.etMaxViajeCorto); val tvLog = findViewById<TextView>(R.id.tvLog)
+                  lifecycleScope.launch {
+                      val a = repo.leerAjustes()
+                      etMax.setText(a.maxRecogidaKm.toString()); etVal.setText(a.valorPorKm.toString())
+                      etMinO.setText(a.minOferta.toString()); etMinA.setText(a.minAceptable.toString()); etCorto.setText(a.maxViajeCortoKm.toString())
+                  }
+                  findViewById<Button>(R.id.btnGuardar).setOnClickListener {
+                      val a = Ajustes(etMax.text.toString().replace(",", ".").toDoubleOrNull() ?: 5.0, etVal.text.toString().toIntOrNull() ?: 1200, etMinO.text.toString().toIntOrNull() ?: 4800, etMinA.text.toString().toIntOrNull() ?: 4000, etCorto.text.toString().replace(",", ".").toDoubleOrNull() ?: 2.0)
+                      lifecycleScope.launch { repo.guardarAjustes(a); Toast.makeText(this@MainActivity, "Guardado", Toast.LENGTH_SHORT).show() }
+                  }
+                  findViewById<Button>(R.id.btnPermisoOverlay).setOnClickListener {
+                      if (!Settings.canDrawOverlays(this)) startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                  }
+                  findViewById<Button>(R.id.btnAbrirAccesibilidad).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                  findViewById<Button>(R.id.btnToggleServicio).setOnClickListener {
+                      InDriveAccessibilityService.instancia?.alternarVentanaFlotante() ?: Toast.makeText(this, "Activa el servicio primero", Toast.LENGTH_SHORT).show()
+                  }
+                  tvLog.text = RegistrarLog.obtenerTexto()
+              }
+              override fun onResume() { super.onResume(); findViewById<TextView>(R.id.tvLog)?.text = RegistrarLog.obtenerTexto() }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/InDriveAccessibilityService.kt
+          package com.tuusuario.miapp
+          import android.accessibilityservice.AccessibilityService
+          import android.accessibilityservice.GestureDescription
+          import android.graphics.Path
+          import android.graphics.Rect
+          import android.os.Bundle
+          import android.view.LayoutInflater
+          import android.view.WindowManager
+          import android.view.accessibility.AccessibilityEvent
+          import android.view.accessibility.AccessibilityNodeInfo
+          import android.widget.Switch
+          import kotlinx.coroutines.*
+          import kotlin.math.roundToInt
+          class InDriveAccessibilityService : AccessibilityService() {
+              companion object {
+                  @Volatile var instancia: InDriveAccessibilityService? = null; private set
+              }
+              private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+              private lateinit var repo: SettingsRepository
+              private var botActivo = false
+              private var ventana: android.view.View? = null
+              override fun onServiceConnected() { super.onServiceConnected(); instancia = this; repo = SettingsRepository(applicationContext) }
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  if (event?.packageName?.toString() != "sinet.startup.inDriver" || !botActivo) return
+                  val root = rootInActiveWindow ?: return
+                  val textos = mutableListOf<String>()
+                  fun rec(n: AccessibilityNodeInfo) { n.text?.toString()?.let { if(it.isNotBlank()) textos.add(it) }; for (i in 0 until n.childCount) n.getChild(i)?.let { rec(it) } }
+                  rec(root)
+                  val km = textos.mapNotNull { Regex("""([\d.,]+)\s*km""").find(it)?.groupValues?.get(1)?.replace(",", ".")?.toDoubleOrNull() }
+                  val precio = textos.mapNotNull { Regex("""\$\s*([\d.]+)""").find(it)?.groupValues?.get(1)?.replace(".", "")?.toIntOrNull() }.firstOrNull()
+                  if (km.size >= 2 && precio != null) {
+                      scope.launch {
+                          val a = repo.leerAjustes(); delay((1000..3000).random().toLong())
+                          if (km[0] > a.maxRecogidaKm) { RegistrarLog.agregar("Ignorada por lejos"); return@launch }
+                          val btn = buscarBoton(root, if (km[1] <= a.maxViajeCortoKm && precio >= a.minAceptable) "Aceptar" else "Ofertar")
+                          btn?.let { tocar(it); RegistrarLog.agregar("Bot tocó ${it.text}") }
+                      }
+                  }
+              }
+              override fun onInterrupt() = Unit
+              override fun onDestroy() { instancia = null; scope.cancel(); ocultarVentanaFlotante(); super.onDestroy() }
+              fun alternarVentanaFlotante() { if (ventana != null) ocultarVentanaFlotante() else mostrarVentanaFlotante() }
+              private fun mostrarVentanaFlotante() {
+                  val wm = getSystemService(WINDOW_SERVICE) as WindowManager; val v = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater).inflate(R.layout.floating_toggle, null)
+                  val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
+                  params.gravity = android.view.Gravity.TOP; params.y = 200
+                  v.findViewById<Switch>(R.id.switchBot).setOnCheckedChangeListener { _, c -> botActivo = c; RegistrarLog.agregar("Bot: $c") }
+                  wm.addView(v, params); ventana = v
+              }
+              private fun ocultarVentanaFlotante() { ventana?.let { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) }; ventana = null }
+              private fun buscarBoton(n: AccessibilityNodeInfo, txt: String): AccessibilityNodeInfo? {
+                  if (n.text?.contains(txt, true) == true || n.contentDescription?.contains(txt, true) == true) return n
+                  for (i in 0 until n.childCount) buscarBoton(n.getChild(i) ?: continue, txt)?.let { return it }; return null
+              }
+              private fun tocar(nodo: AccessibilityNodeInfo) {
+                  val r = Rect(); nodo.getBoundsInScreen(r); val p = Path().apply { moveTo(r.centerX().toFloat(), r.centerY().toFloat()); lineTo(r.centerX()+2f, r.centerY()+2f) }
+                  dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(p, 0, 100)).build(), null, null)
+              }
+          }
+          EOF
+
+      # --- COMPILAR Y ENTREGAR ---
+      - name: Build APK
+        run: gradle assembleDebug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: MiAppAndroid/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
