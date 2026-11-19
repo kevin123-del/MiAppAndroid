@@ -1,36 +1,42 @@
+
 name: Build APK
-on: [push, workflow_dispatch]
+
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up JDK 17
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-          
-      - name: Setup Android SDK
+
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools'
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
-      - name: Setup Gradle
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.9'
 
-      - name: Create directories
+      - name: Crear directorios
         run: |
           mkdir -p app/src/main/java/com/tuusuario/miapp
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/xml
 
-      - name: Create gradle.properties
+      - name: Crear gradle.properties
         run: |
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
@@ -38,7 +44,7 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-      - name: Create build.gradle
+      - name: Crear build.gradle
         run: |
           cat << 'EOF' > build.gradle
           plugins {
@@ -46,27 +52,58 @@ jobs:
               id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
           }
           EOF
-          
-      - name: Create settings.gradle
+
+      - name: Crear settings.gradle
         run: |
           cat << 'EOF' > settings.gradle
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
           rootProject.name = "MiAppAndroid"
           include ':app'
           EOF
 
-      - name: Create app/build.gradle
+      - name: Crear app/build.gradle
         run: |
           cat << 'EOF' > app/build.gradle
-          plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
           android {
               namespace 'com.tuusuario.miapp'
               compileSdk 34
-              defaultConfig { applicationId "com.tuusuario.miapp"; minSdk 26; targetSdk 34; versionCode 1; versionName "1.0" }
-              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-              kotlinOptions { jvmTarget = '17' }
+
+              defaultConfig {
+                  applicationId "com.tuusuario.miapp"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
           }
+
           dependencies {
               implementation 'androidx.core:core-ktx:1.13.1'
               implementation 'androidx.appcompat:appcompat:1.7.0'
@@ -77,272 +114,564 @@ jobs:
           }
           EOF
 
-      - name: Create AndroidManifest.xml
+      - name: Crear AndroidManifest.xml
         run: |
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-              <application android:allowBackup="true" android:label="Bot InDrive" android:theme="@style/Theme.Material3.DayNight.NoActionBar">
-                  <activity android:name=".MainActivity" android:exported="true">
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Bot InDrive"
+                  android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
+
                   </activity>
-                  <service android:name=".InDriveAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="Bot InDrive">
+
+                  <service
+                      android:name=".InDriveAccessibilityService"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+                      android:exported="true"
+                      android:label="Bot InDrive">
+
                       <intent-filter>
                           <action android:name="android.accessibilityservice.AccessibilityService" />
                       </intent-filter>
-                      <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
+
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/accessibility_service_config" />
+
                   </service>
+
               </application>
           </manifest>
           EOF
 
-      - name: Create accessibility_service_config.xml
+      - name: Crear configuración de accesibilidad
         run: |
           cat << 'EOF' > app/src/main/res/xml/accessibility_service_config.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+          <accessibility-service
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeAllMask"
               android:accessibilityFeedbackType="feedbackGeneric"
               android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds"
               android:canRetrieveWindowContent="true"
               android:canPerformGestures="true"
-              android:notificationTimeout="200"
-              android:packageNames="sinet.startup.inDriver" />
+              android:notificationTimeout="100" />
           EOF
 
-      - name: Create activity_main.xml
+      - name: Crear activity_main.xml
         run: |
           cat << 'EOF' > app/src/main/res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#F5F5F5">
-              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
-                  <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp" app:cardCornerRadius="12dp" xmlns:app="http://schemas.android.com/apk/res-auto">
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp" android:gravity="center">
-                          <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Estado del Bot" android:textSize="18sp" android:textStyle="bold" />
-                          <Switch android:id="@+id/switchMaster" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:scaleX="1.5" android:scaleY="1.5" />
-                          <Button android:id="@+id/btnToggleServicio" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Mostrar Botón Flotante" />
+          <ScrollView
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#F5F5F5">
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:padding="16dp">
+
+                  <com.google.android.material.card.MaterialCardView
+                      xmlns:app="http://schemas.android.com/apk/res-auto"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginBottom="16dp"
+                      app:cardCornerRadius="12dp">
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="vertical"
+                          android:padding="16dp"
+                          android:gravity="center">
+
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="Estado del Bot"
+                              android:textSize="18sp"
+                              android:textStyle="bold" />
+
+                          <Switch
+                              android:id="@+id/switchMaster"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="8dp" />
+
+                          <Button
+                              android:id="@+id/btnToggleServicio"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="16dp"
+                              android:text="Mostrar Botón Flotante" />
+
                       </LinearLayout>
                   </com.google.android.material.card.MaterialCardView>
-                  <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp" app:cardCornerRadius="12dp" xmlns:app="http://schemas.android.com/apk/res-auto">
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
-                          <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Parámetros de InDrive" android:textStyle="bold" android:textSize="16sp" android:paddingBottom="8dp"/>
-                          <EditText android:id="@+id/etMaxRecogida" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Max recogida (km)" android:inputType="numberDecimal" />
-                          <EditText android:id="@+id/etValorKm" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Valor por km (COP)" android:inputType="number" />
-                          <EditText android:id="@+id/etMinOferta" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min oferta (COP)" android:inputType="number" />
-                          <EditText android:id="@+id/etMinAceptable" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Min aceptable (COP)" android:inputType="number" />
-                          <EditText android:id="@+id/etMaxViajeCorto" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Max viaje corto (km)" android:inputType="numberDecimal" />
-                          <Button android:id="@+id/btnGuardar" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Guardar Parámetros" android:backgroundTint="#FF9800" />
+
+                  <com.google.android.material.card.MaterialCardView
+                      xmlns:app="http://schemas.android.com/apk/res-auto"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginBottom="16dp"
+                      app:cardCornerRadius="12dp">
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="vertical"
+                          android:padding="16dp">
+
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="Parámetros de InDrive"
+                              android:textStyle="bold"
+                              android:textSize="16sp"
+                              android:paddingBottom="8dp" />
+
+                          <EditText
+                              android:id="@+id/etMaxRecogida"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:hint="Max recogida (km)"
+                              android:inputType="numberDecimal" />
+
+                          <EditText
+                              android:id="@+id/etValorKm"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:hint="Valor por km (COP)"
+                              android:inputType="number" />
+
+                          <EditText
+                              android:id="@+id/etMinOferta"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:hint="Min oferta (COP)"
+                              android:inputType="number" />
+
+                          <EditText
+                              android:id="@+id/etMinAceptable"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:hint="Min aceptable (COP)"
+                              android:inputType="number" />
+
+                          <EditText
+                              android:id="@+id/etMaxViajeCorto"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:hint="Max viaje corto (km)"
+                              android:inputType="numberDecimal" />
+
+                          <Button
+                              android:id="@+id/btnGuardar"
+                              android:layout_width="match_parent"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="8dp"
+                              android:text="Guardar Parámetros"
+                              android:backgroundTint="#FF9800" />
+
                       </LinearLayout>
                   </com.google.android.material.card.MaterialCardView>
-                  <Button android:id="@+id/btnPermisoOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Dar permiso flotante" />
-                  <Button android:id="@+id/btnAbrirAccesibilidad" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="2. Activar Accesibilidad" />
-                  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Registro de acciones:" android:textStyle="bold" android:paddingTop="16dp" />
-                  <TextView android:id="@+id/tvLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:fontFamily="monospace" android:background="#1E1E1E" android:textColor="#00FF00" android:padding="8dp" android:minLines="5" android:text="(sin registros)" />
+
+                  <Button
+                      android:id="@+id/btnPermisoOverlay"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="1. Dar permiso flotante" />
+
+                  <Button
+                      android:id="@+id/btnAbrirAccesibilidad"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="2. Activar Accesibilidad" />
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Registro de acciones:"
+                      android:textStyle="bold"
+                      android:paddingTop="16dp" />
+
+                  <TextView
+                      android:id="@+id/tvLog"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:textSize="12sp"
+                      android:fontFamily="monospace"
+                      android:background="#1E1E1E"
+                      android:textColor="#00FF00"
+                      android:padding="8dp"
+                      android:minLines="5"
+                      android:text="(sin registros)" />
+
               </LinearLayout>
           </ScrollView>
           EOF
 
-      - name: Create floating_toggle.xml
+      - name: Crear floating_toggle.xml
         run: |
           cat << 'EOF' > app/src/main/res/layout/floating_toggle.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="#CC000000" android:padding="8dp" android:gravity="center_vertical" android:orientation="horizontal">
-              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Auto" android:textColor="#FFFFFF" android:textStyle="bold" />
-              <Switch android:id="@+id/switchBot" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
+          <LinearLayout
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:background="#CC000000"
+              android:padding="8dp"
+              android:gravity="center_vertical"
+              android:orientation="horizontal">
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Auto"
+                  android:textColor="#FFFFFF"
+                  android:textStyle="bold" />
+
+              <Switch
+                  android:id="@+id/switchBot"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="8dp" />
+
           </LinearLayout>
           EOF
 
-      - name: Create Kotlin files
+      - name: Crear archivos Kotlin
         run: |
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/Modelos.kt
           package com.tuusuario.miapp
-          data class DatosOferta(val recogidaKm: Double, val viajeKm: Double, val precioOfertado: Int)
-          data class Ajustes(val maxRecogidaKm: Double, val valorPorKm: Int, val minOferta: Int, val minAceptable: Int, val maxViajeCortoKm: Double)
-          data class Decision(val accion: Accion, val monto: Int, val motivo: String)
-          enum class Accion { ACEPTAR, OFERTAR, IGNORAR }
+
+          data class DatosOferta(
+              val recogidaKm: Double,
+              val viajeKm: Double,
+              val precioOfertado: Int
+          )
+
+          data class Ajustes(
+              val maxRecogidaKm: Double,
+              val valorPorKm: Int,
+              val minOferta: Int,
+              val minAceptable: Int,
+              val maxViajeCortoKm: Double
+          )
+
+          data class Decision(
+              val accion: Accion,
+              val monto: Int,
+              val motivo: String
+          )
+
+          enum class Accion {
+              ACEPTAR, OFERTAR, IGNORAR
+          }
           EOF
 
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/RegistrarLog.kt
           package com.tuusuario.miapp
+
           import java.text.SimpleDateFormat
           import java.util.Date
           import java.util.Locale
+
           object RegistrarLog {
               private val entradas = mutableListOf<String>()
+
               fun agregar(mensaje: String) {
-                  val hora = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-                  synchronized(entradas) { entradas.add(0, "[$hora] $mensaje"); if(entradas.size>50) entradas.removeAt(entradas.lastIndex) }
+                  val hora = SimpleDateFormat(
+                      "HH:mm:ss",
+                      Locale.getDefault()
+                  ).format(Date())
+
+                  synchronized(entradas) {
+                      entradas.add(0, "[$hora] $mensaje")
+                      if (entradas.size > 50) {
+                          entradas.removeAt(entradas.lastIndex)
+                      }
+                  }
               }
-              fun obtenerTexto(): String = synchronized(entradas) { if (entradas.isEmpty()) "(sin registros)" else entradas.joinToString("\n") }
+
+              fun obtenerTexto(): String =
+                  synchronized(entradas) {
+                      if (entradas.isEmpty()) {
+                          "(sin registros)"
+                      } else {
+                          entradas.joinToString("\n")
+                      }
+                  }
           }
           EOF
 
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/SettingsRepository.kt
           package com.tuusuario.miapp
+
           import android.content.Context
           import androidx.datastore.preferences.core.*
           import androidx.datastore.preferences.preferencesDataStore
           import kotlinx.coroutines.flow.first
-          private val Context.dataStore by preferencesDataStore(name = "ajustes_bot")
+
+          private val Context.dataStore by preferencesDataStore(
+              name = "ajustes_bot"
+          )
+
           class SettingsRepository(private val context: Context) {
+
               companion object {
-                  val MAX_RECOGIDA = doublePreferencesKey("max_recogida"); val VALOR_POR_KM = intPreferencesKey("valor_km")
-                  val MIN_OFERTA = intPreferencesKey("min_oferta"); val MIN_ACEPTABLE = intPreferencesKey("min_aceptable"); val MAX_VIAJE_CORTO = doublePreferencesKey("max_viaje")
+                  val MAX_RECOGIDA = doublePreferencesKey("max_recogida")
+                  val VALOR_POR_KM = intPreferencesKey("valor_km")
+                  val MIN_OFERTA = intPreferencesKey("min_oferta")
+                  val MIN_ACEPTABLE = intPreferencesKey("min_aceptable")
+                  val MAX_VIAJE_CORTO = doublePreferencesKey("max_viaje")
               }
+
               suspend fun leerAjustes(): Ajustes {
                   val p = context.dataStore.data.first()
-                  return Ajustes(p[MAX_RECOGIDA] ?: 3.0, p[VALOR_POR_KM] ?: 1200, p[MIN_OFERTA] ?: 4800, p[MIN_ACEPTABLE] ?: 4000, p[MAX_VIAJE_CORTO] ?: 2.0)
+
+                  return Ajustes(
+                      p[MAX_RECOGIDA] ?: 3.0,
+                      p[VALOR_POR_KM] ?: 1200,
+                      p[MIN_OFERTA] ?: 4800,
+                      p[MIN_ACEPTABLE] ?: 4000,
+                      p[MAX_VIAJE_CORTO] ?: 2.0
+                  )
               }
+
               suspend fun guardarAjustes(a: Ajustes) {
-                  context.dataStore.edit { p -> p[MAX_RECOGIDA] = a.maxRecogidaKm; p[VALOR_POR_KM] = a.valorPorKm; p[MIN_OFERTA] = a.minOferta; p[MIN_ACEPTABLE] = a.minAceptable; p[MAX_VIAJE_CORTO] = a.maxViajeCortoKm }
+                  context.dataStore.edit { p ->
+                      p[MAX_RECOGIDA] = a.maxRecogidaKm
+                      p[VALOR_POR_KM] = a.valorPorKm
+                      p[MIN_OFERTA] = a.minOferta
+                      p[MIN_ACEPTABLE] = a.minAceptable
+                      p[MAX_VIAJE_CORTO] = a.maxViajeCortoKm
+                  }
               }
           }
           EOF
 
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/DecisionEngine.kt
           package com.tuusuario.miapp
+
           import kotlin.math.round
+
           object DecisionEngine {
-              fun tomarDecision(datos: DatosOferta, ajustes: Ajustes): Decision {
+
+              fun tomarDecision(
+                  datos: DatosOferta,
+                  ajustes: Ajustes
+              ): Decision {
+
                   if (datos.recogidaKm > ajustes.maxRecogidaKm) {
-                      return Decision(Accion.IGNORAR, 0, "Recogida muy lejos (${datos.recogidaKm} > ${ajustes.maxRecogidaKm} km)")
+                      return Decision(
+                          Accion.IGNORAR,
+                          0,
+                          "Recogida demasiado lejos"
+                      )
                   }
-                  if (datos.viajeKm <= ajustes.maxViajeCortoKm && datos.precioOfertado >= ajustes.minAceptable) {
-                      return Decision(Accion.ACEPTAR, datos.precioOfertado, "Viaje corto con oferta aceptable (${datos.precioOfertado})")
+
+                  if (
+                      datos.viajeKm <= ajustes.maxViajeCortoKm &&
+                      datos.precioOfertado >= ajustes.minAceptable
+                  ) {
+                      return Decision(
+                          Accion.ACEPTAR,
+                          datos.precioOfertado,
+                          "Viaje corto con precio aceptable"
+                      )
                   }
-                  var montoCalculado = (datos.viajeKm * ajustes.valorPorKm).toInt()
-                  if (montoCalculado < ajustes.minOferta) {
-                      montoCalculado = ajustes.minOferta
-                  }
-                  val montoRedondeado = (round(montoCalculado / 100.0) * 100).toInt()
-                  return Decision(Accion.OFERTAR, montoRedondeado, "Contraoferta calculada: $montoRedondeado COP")
+
+                  val calculado = (
+                      datos.viajeKm * ajustes.valorPorKm
+                  ).toInt()
+
+                  val base = maxOf(calculado, ajustes.minOferta)
+
+                  val redondeado = (
+                      round(base / 100.0) * 100
+                  ).toInt()
+
+                  return Decision(
+                      Accion.OFERTAR,
+                      redondeado,
+                      "Contraoferta calculada"
+                  )
               }
           }
           EOF
 
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/InDriveAccessibilityService.kt
           package com.tuusuario.miapp
+
           import android.accessibilityservice.AccessibilityService
-          import android.content.Intent
           import android.graphics.PixelFormat
-          import android.os.Handler
-          import android.os.Looper
           import android.view.Gravity
           import android.view.LayoutInflater
           import android.view.View
           import android.view.WindowManager
+          import android.view.accessibility.AccessibilityEvent
           import android.view.accessibility.AccessibilityNodeInfo
           import android.widget.Switch
-          import android.widget.Toast
           import kotlinx.coroutines.CoroutineScope
           import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.delay
           import kotlinx.coroutines.launch
-          import kotlin.random.Random
 
           class InDriveAccessibilityService : AccessibilityService() {
-              companion object { var instancia: InDriveAccessibilityService? = null }
+
+              companion object {
+                  var instancia: InDriveAccessibilityService? = null
+              }
+
               private var botActivo = false
               private lateinit var windowManager: WindowManager
               private lateinit var floatingView: View
-              private lateinit var repo: SettingsRepository
-              private val scope = CoroutineScope(Dispatchers.Main)
-              private var procesandoSolicitud = false
+              private var ventanaVisible = false
 
               override fun onServiceConnected() {
                   super.onServiceConnected()
+
                   instancia = this
-                  repo = SettingsRepository(this)
-                  windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-                  RegistrarLog.agregar("Servicio conectado.")
+
+                  windowManager =
+                      getSystemService(WINDOW_SERVICE) as WindowManager
+
+                  RegistrarLog.agregar("Servicio conectado correctamente")
               }
 
-              override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
-                  if (!botActivo || procesandoSolicitud || event == null) return
+              override fun onAccessibilityEvent(
+                  event: AccessibilityEvent?
+              ) {
+                  if (!botActivo || event == null) return
+
+                  if (event.packageName?.toString() != "sinet.startup.inDriver") {
+                      return
+                  }
+
                   val rootNode = rootInActiveWindow ?: return
+
                   try {
-                      analizarYDecidirSolicitud(rootNode)
+                      val textos = mutableListOf<String>()
+                      recolectarTextos(rootNode, textos)
+
+                      if (textos.isNotEmpty()) {
+                          RegistrarLog.agregar(
+                              "Elementos detectados: ${textos.size}"
+                          )
+
+                          textos.take(15).forEach {
+                              RegistrarLog.agregar("Texto: $it")
+                          }
+                      }
+
                   } catch (e: Exception) {
-                      RegistrarLog.agregar("Error: ${e.message}")
-                  } finally {
-                      rootNode.recycle()
+                      RegistrarLog.agregar(
+                          "Error de lectura: ${e.message}"
+                      )
                   }
               }
 
-              private fun analizarYDecidirSolicitud(rootNode: AccessibilityNodeInfo) {
-                  val textos = mutableListOf<String>()
-                  recolectarTextos(rootNode, textos)
-                  // Aquí se procesarán los textos detectados de la pantalla de InDrive
-              }
+              private fun recolectarTextos(
+                  node: AccessibilityNodeInfo,
+                  lista: MutableList<String>
+              ) {
+                  node.text?.toString()?.let {
+                      if (it.isNotBlank()) lista.add(it)
+                  }
 
-              private fun recolectarTextos(node: AccessibilityNodeInfo, lista: MutableList<String>) {
-                  if (node.text != null) lista.add(node.text.toString())
+                  node.contentDescription?.toString()?.let {
+                      if (it.isNotBlank()) lista.add(it)
+                  }
+
                   for (i in 0 until node.childCount) {
-                      val child = node.getChild(i)
-                      if (child != null) {
-                        recolectarTextos(child, lista)
-                        child.recycle()
-                      }
-                  }
-              }
+                      val child = node.getChild(i) ?: continue
 
-              private fun ejecutarAccionConPausa(decision: Decision, nodoAccion: AccessibilityNodeInfo?) {
-                  procesandoSolicitud = true
-                  scope.launch {
-                      val pausaMs = Random.nextLong(1000, 3000)
-                      delay(pausaMs)
-                      when (decision.accion) {
-                          Accion.ACEPTAR -> {
-                              RegistrarLog.agregar("Aceptando viaje: ${decision.motivo}")
-                              nodoAccion?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                          }
-                          Accion.OFERTAR -> {
-                              RegistrarLog.agregar("Enviando oferta: ${decision.monto} COP")
-                          }
-                          Accion.IGNORAR -> {
-                              RegistrarLog.agregar("Ignorando: ${decision.motivo}")
-                          }
+                      try {
+                          recolectarTextos(child, lista)
+                      } finally {
+                          child.recycle()
                       }
-                      delay(2000)
-                      procesandoSolicitud = false
                   }
               }
 
               fun setBotActivo(activo: Boolean) {
                   botActivo = activo
-                  RegistrarLog.agregar(if (activo) "Bot activado" else "Bot pausado")
+
+                  RegistrarLog.agregar(
+                      if (activo) "Diagnóstico activado"
+                      else "Diagnóstico pausado"
+                  )
               }
 
               fun alternarVentanaFlotante() {
-                  if (::floatingView.isInitialized) {
+                  if (ventanaVisible) {
                       windowManager.removeView(floatingView)
+                      ventanaVisible = false
                       return
                   }
-                  floatingView = LayoutInflater.from(this).inflate(R.layout.floating_toggle, null)
+
+                  floatingView = LayoutInflater.from(this).inflate(
+                      R.layout.floating_toggle,
+                      null
+                  )
+
                   val params = WindowManager.LayoutParams(
-                      WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                       PixelFormat.TRANSLUCENT
-                  ).apply { gravity = Gravity.TOP or Gravity.START; x = 100; y = 200 }
-                  floatingView.findViewById<Switch>(R.id.switchBot).setOnCheckedChangeListener { _, isChecked -> setBotActivo(isChecked) }
+                  )
+
+                  params.gravity = Gravity.TOP or Gravity.START
+                  params.x = 100
+                  params.y = 200
+
+                  floatingView.findViewById<Switch>(
+                      R.id.switchBot
+                  ).setOnCheckedChangeListener { _, checked ->
+                      setBotActivo(checked)
+                  }
+
                   windowManager.addView(floatingView, params)
+                  ventanaVisible = true
               }
 
-              override fun onInterrupt() {}
+              override fun onInterrupt() {
+                  RegistrarLog.agregar("Servicio interrumpido")
+              }
+
               override fun onDestroy() {
-                  super.onDestroy()
+                  if (ventanaVisible) {
+                      windowManager.removeView(floatingView)
+                      ventanaVisible = false
+                  }
+
                   instancia = null
-                  if (::floatingView.isInitialized) windowManager.removeView(floatingView)
+                  super.onDestroy()
               }
           }
           EOF
 
           cat << 'EOF' > app/src/main/java/com/tuusuario/miapp/MainActivity.kt
           package com.tuusuario.miapp
+
           import android.content.Intent
           import android.net.Uri
           import android.os.Bundle
@@ -351,62 +680,129 @@ jobs:
           import androidx.appcompat.app.AppCompatActivity
           import androidx.lifecycle.lifecycleScope
           import kotlinx.coroutines.launch
+
           class MainActivity : AppCompatActivity() {
+
               private lateinit var repo: SettingsRepository
-              private lateinit var switchMaster: Switch
               private lateinit var tvLog: TextView
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+
                   setContentView(R.layout.activity_main)
+
                   repo = SettingsRepository(this)
+
                   val etMax = findViewById<EditText>(R.id.etMaxRecogida)
                   val etVal = findViewById<EditText>(R.id.etValorKm)
                   val etMinO = findViewById<EditText>(R.id.etMinOferta)
                   val etMinA = findViewById<EditText>(R.id.etMinAceptable)
                   val etCorto = findViewById<EditText>(R.id.etMaxViajeCorto)
-                  switchMaster = findViewById(R.id.switchMaster)
+
+                  val switchMaster = findViewById<Switch>(
+                      R.id.switchMaster
+                  )
+
                   tvLog = findViewById(R.id.tvLog)
-                  
+
                   lifecycleScope.launch {
                       val a = repo.leerAjustes()
-                      etMax.setText(a.maxRecogidaKm.toString()); etVal.setText(a.valorPorKm.toString())
-                      etMinO.setText(a.minOferta.toString()); etMinA.setText(a.minAceptable.toString()); etCorto.setText(a.maxViajeCortoKm.toString())
+
+                      etMax.setText(a.maxRecogidaKm.toString())
+                      etVal.setText(a.valorPorKm.toString())
+                      etMinO.setText(a.minOferta.toString())
+                      etMinA.setText(a.minAceptable.toString())
+                      etCorto.setText(a.maxViajeCortoKm.toString())
                   }
-                  
-                  switchMaster.setOnCheckedChangeListener { _, isChecked -> 
-                      InDriveAccessibilityService.instancia?.setBotActivo(isChecked) 
+
+                  switchMaster.setOnCheckedChangeListener { _, checked ->
+                      InDriveAccessibilityService.instancia
+                          ?.setBotActivo(checked)
+
+                      actualizarLog()
                   }
-                  
+
                   findViewById<Button>(R.id.btnGuardar).setOnClickListener {
+
                       val a = Ajustes(
-                          etMax.text.toString().replace(",", ".").toDoubleOrNull() ?: 3.0,
+                          etMax.text.toString()
+                              .replace(",", ".").toDoubleOrNull() ?: 3.0,
+
                           etVal.text.toString().toIntOrNull() ?: 1200,
+
                           etMinO.text.toString().toIntOrNull() ?: 4800,
+
                           etMinA.text.toString().toIntOrNull() ?: 4000,
-                          etCorto.text.toString().replace(",", ".").toDoubleOrNull() ?: 2.0
+
+                          etCorto.text.toString()
+                              .replace(",", ".").toDoubleOrNull() ?: 2.0
                       )
-                      lifecycleScope.launch { repo.guardarAjustes(a); Toast.makeText(this@MainActivity, "Guardado", Toast.LENGTH_SHORT).show() }
+
+                      lifecycleScope.launch {
+                          repo.guardarAjustes(a)
+
+                          Toast.makeText(
+                              this@MainActivity,
+                              "Ajustes guardados",
+                              Toast.LENGTH_SHORT
+                          ).show()
+                      }
                   }
-                  findViewById<Button>(R.id.btnPermisoOverlay).setOnClickListener { if (!Settings.canDrawOverlays(this)) startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
-                  findViewById<Button>(R.id.btnAbrirAccesibilidad).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                  findViewById<Button>(R.id.btnToggleServicio).setOnClickListener { InDriveAccessibilityService.instancia?.alternarVentanaFlotante() ?: Toast.makeText(this, "Activa accesibilidad primero", Toast.LENGTH_SHORT).show() }
+
+                  findViewById<Button>(
+                      R.id.btnPermisoOverlay
+                  ).setOnClickListener {
+                      if (!Settings.canDrawOverlays(this)) {
+                          startActivity(
+                              Intent(
+                                  Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                  Uri.parse("package:$packageName")
+                              )
+                          )
+                      }
+                  }
+
+                  findViewById<Button>(
+                      R.id.btnAbrirAccesibilidad
+                  ).setOnClickListener {
+                      startActivity(
+                          Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                      )
+                  }
+
+                  findViewById<Button>(
+                      R.id.btnToggleServicio
+                  ).setOnClickListener {
+                      InDriveAccessibilityService.instancia
+                          ?.alternarVentanaFlotante()
+                          ?: Toast.makeText(
+                              this,
+                              "Activa la accesibilidad primero",
+                              Toast.LENGTH_SHORT
+                          ).show()
+                  }
+              }
+
+              private fun actualizarLog() {
+                  tvLog.text = RegistrarLog.obtenerTexto()
               }
 
               override fun onResume() {
                   super.onResume()
+
                   if (::tvLog.isInitialized) {
-                      tvLog.text = RegistrarLog.obtenerTexto()
+                      actualizarLog()
                   }
               }
           }
           EOF
 
-      - name: Build Debug APK with Gradle
-        run: ./gradlew assembleDebug
+      - name: Compilar APK
+        run: gradle assembleDebug --no-daemon
 
-      - name: Upload APK Artifact
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
