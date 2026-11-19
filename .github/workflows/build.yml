@@ -294,9 +294,7 @@ jobs:
 
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
                   if (event?.packageName?.toString() != "sinet.startup.inDriver" || !botActivoGlobal) return
-                  
-                  // Velocidad: 300ms para no perder ofertas rápidas
-                  if (System.currentTimeMillis() - ultimoProcesamiento < 300) return 
+                  if (System.currentTimeMillis() - ultimoProcesamiento < 500) return 
 
                   val root = rootInActiveWindow ?: return
                   
@@ -306,54 +304,64 @@ jobs:
                   if (btnAceptar == null && btnOfertar == null) return 
 
                   val textos = mutableListOf<String>()
-                  fun rec(n: AccessibilityNodeInfo) { n.text?.toString()?.let { if(it.isNotBlank()) textos.add(it) }; for (i in 0 until n.childCount) n.getChild(i)?.let { rec(it) } }
+                  // LEER NODO POR NODO
+                  fun rec(n: AccessibilityNodeInfo) { 
+                      n.text?.toString()?.let { if(it.isNotBlank()) textos.add(it) }
+                      for (i in 0 until n.childCount) n.getChild(i)?.let { rec(it) } 
+                  }
                   rec(root)
-                  val textoCompleto = textos.joinToString(" ")
-
-                  procesarOferta(root, textoCompleto, btnAceptar, btnOfertar)
+                  
+                  procesarOferta(root, textos, btnAceptar, btnOfertar)
               }
 
-              private fun procesarOferta(root: AccessibilityNodeInfo, textoCompleto: String, btnAceptar: AccessibilityNodeInfo?, btnOfertar: AccessibilityNodeInfo?) {
+              private fun procesarOferta(root: AccessibilityNodeInfo, textos: List<String>, btnAceptar: AccessibilityNodeInfo?, btnOfertar: AccessibilityNodeInfo?) {
                   ultimoProcesamiento = System.currentTimeMillis()
                   
-                  val precioRegex = Regex("""(?:COL\$|COP|\$)\s*([\d.,]+)""")
-                  var precio = precioRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.replace(",", "")?.toIntOrNull()
-                  if (precio == null) {
-                      val fallbackRegex = Regex("""\b(\d{1,3}(?:\.\d{3})+)\b""")
-                      precio = fallbackRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.toIntOrNull()
+                  // 1. Extraer Precio
+                  var precio: Int? = null
+                  for (txt in textos) {
+                      val match = Regex("""(?:COL\$|COP|\$)\s*([\d.,]+)""").find(txt)
+                      if (match != null) {
+                          precio = match.groupValues[1].replace(".", "").replace(",", "").toIntOrNull()
+                          if (precio != null) break
+                      }
                   }
 
-                  // MAGIA: Encontrar todos los números seguidos de km, m, metros, etc.
-                  val regexDistancia = Regex("""([\d]+(?:[.,]\d+)?)\s*(km|m|metros|mts)\b""", RegexOption.IGNORE_CASE)
-                  val matches = regexDistancia.findAll(textoCompleto).map { match ->
-                      val valor = match.groupValues[1].replace(",", ".").toDoubleOrNull() ?: 0.0
-                      val unidad = match.groupValues[2].lowercase()
-                      if ((unidad == "m" || unidad == "metros" || unidad == "mts") && valor > 10) valor / 1000.0 else valor
-                  }.filter { it >= 0.0 }.toList()
+                  // 2. Extraer Distancias (SOLO las cajas que digan "km")
+                  val distancias = mutableListOf<Double>()
+                  for (txt in textos) {
+                      if (txt.lowercase().contains("km")) {
+                          val match = Regex("""([\d.,]+)""").find(txt)
+                          if (match != null) {
+                              val valor = match.groupValues[1].replace(",", ".").toDoubleOrNull()
+                              if (valor != null && valor > 0.0 && valor < 200.0) {
+                                  distancias.add(valor)
+                              }
+                          }
+                      }
+                  }
 
-                  // En InDrive las primeras dos distancias son Recogida y Viaje
-                  if (precio != null && matches.size >= 2) {
-                      val recogidaKm = matches[0]
-                      val viajeKm = matches[1]
+                  if (precio != null && distancias.size >= 2) {
+                      val recogidaKm = distancias[0]
+                      val viajeKm = distancias[1]
 
-                      RegistrarLog.agregar("Oferta: $precio COP | Rec: $recogidaKm km | Viaje: $viajeKm km")
+                      RegistrarLog.agregar("Oferta: $precio | Rec: $recogidaKm km | Viaje: $viajeKm km")
 
                       scope.launch {
                           val a = repo.leerAjustes()
                           delay((1000..2000).random().toLong())
 
                           if (recogidaKm > a.maxRecogidaKm) {
-                              RegistrarLog.agregar("Decisión: IGNORAR (Recogida lejos)")
+                              RegistrarLog.agregar("IGNORAR: Recogida lejos")
                               return@launch
                           }
 
                           if (viajeKm <= a.maxViajeCortoKm && precio >= a.minAceptable) {
-                              RegistrarLog.agregar("Decisión: ACEPTAR ($precio COP)")
+                              RegistrarLog.agregar("ACEPTAR: $precio")
                               btnAceptar?.let { tocar(it) }
                           } else {
-                              val calculado = viajeKm * a.valorPorKm
-                              val montoOferta = (maxOf(calculado, a.minOferta.toDouble()) / 100.0).roundToInt() * 100
-                              RegistrarLog.agregar("Decisión: OFERTAR ($montoOferta COP)")
+                              val monto = (maxOf(viajeKm * a.valorPorKm, a.minOferta.toDouble()) / 100.0).roundToInt() * 100
+                              RegistrarLog.agregar("OFERTAR: $monto")
                               if (btnOfertar != null) {
                                   tocar(btnOfertar)
                                   delay(800)
@@ -362,7 +370,7 @@ jobs:
                                       val input = buscarEditText(root2)
                                       if (input != null) {
                                           val args = android.os.Bundle()
-                                          args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, montoOferta.toString())
+                                          args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, monto.toString())
                                           input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
                                           delay(400)
                                           buscarBoton(root2, listOf("Enviar"))?.let { tocar(it) }
@@ -372,8 +380,8 @@ jobs:
                           }
                       }
                   } else {
-                      RegistrarLog.agregar("Fallo -> Precio: $precio, Kms encontrados: $matches")
-                      RegistrarLog.agregar("Veo: ${textoCompleto.take(40)}")
+                      RegistrarLog.agregar("Fallo -> Precio: $precio, Kms: $distancias")
+                      RegistrarLog.agregar("Textos leidos: ${textos.take(5)}...")
                   }
               }
 
@@ -386,10 +394,9 @@ jobs:
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager; val v = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater).inflate(R.layout.floating_toggle, null)
                   val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
                   
-                  // Lo puse arriba a la derecha para que no estorbe
-                  params.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                  params.gravity = android.view.Gravity.TOP or android.view.Gravity.START
                   params.x = 20
-                  params.y = 150 
+                  params.y = 250 
                   
                   val sw = v.findViewById<Switch>(R.id.switchBot)
                   sw.isChecked = botActivoGlobal
