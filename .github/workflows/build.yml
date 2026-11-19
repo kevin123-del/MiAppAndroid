@@ -269,7 +269,7 @@ jobs:
 
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
                   if (event?.packageName?.toString() != "sinet.startup.inDriver" || !botActivo) return
-                  if (System.currentTimeMillis() - ultimoProcesamiento < 4000) return // Esperar 4 seg entre lecturas
+                  if (System.currentTimeMillis() - ultimoProcesamiento < 4000) return 
 
                   val root = rootInActiveWindow ?: return
                   val textos = mutableListOf<String>()
@@ -277,7 +277,6 @@ jobs:
                   rec(root)
                   val textoCompleto = textos.joinToString(" ")
 
-                  // Si vemos estos textos, estamos en la pantalla de una oferta
                   if (textoCompleto.contains("Aceptar por", ignoreCase = true) || textoCompleto.contains("Ofrece tu tarifa", ignoreCase = true)) {
                       procesarOferta(root, textoCompleto)
                   }
@@ -286,17 +285,24 @@ jobs:
               private fun procesarOferta(root: AccessibilityNodeInfo, textoCompleto: String) {
                   ultimoProcesamiento = System.currentTimeMillis()
                   
-                  // 1. Extraer Precio (busca "7.000", "8.000", etc.)
-                  val precioRegex = Regex("""(\d{1,3}(?:\.\d{3})+)""")
-                  val precioStr = precioRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")
-                  val precio = precioStr?.toIntOrNull()
+                  // 1. Buscar el precio de forma más flexible (ej. COL$ 6.550 o COP 6550)
+                  val precioRegex = Regex("""(?:COL\$|COP|\$)\s*([\d.,]+)""")
+                  var precio = precioRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.replace(",", "")?.toIntOrNull()
+                  
+                  // Si falla, buscar cualquier número con formato 6.550
+                  if (precio == null) {
+                      val fallbackRegex = Regex("""\b(\d{1,3}(?:\.\d{3})+)\b""")
+                      precio = fallbackRegex.find(textoCompleto)?.groupValues?.get(1)?.replace(".", "")?.toIntOrNull()
+                  }
 
-                  // 2. Extraer distancias (busca "0,6 km", "6,6 km")
-                  val kms = Regex("""([\d,]+)\s*km""").findAll(textoCompleto).map { it.groupValues[1].replace(",", ".").toDouble() }.toList()
+                  // 2. Buscar distancias (ej. 0,6 km)
+                  val kms = Regex("""([\d,]+)\s*km""").findAll(textoCompleto)
+                      .mapNotNull { it.groupValues[1].replace(",", ".").toDoubleOrNull() }
+                      .toList()
 
                   if (precio != null && kms.size >= 2) {
                       val recogidaKm = kms[0]
-                      val viajeKm = kms[1] // Primera distancia es recogida, segunda es viaje
+                      val viajeKm = kms[1]
 
                       RegistrarLog.agregar("Oferta leída: $precio COP | Rec: $recogidaKm km | Viaje: $viajeKm km")
 
@@ -335,8 +341,7 @@ jobs:
                           }
                       }
                   } else {
-                      // Si falla, mostramos qué está viendo para poder ajustarlo
-                      RegistrarLog.agregar("Fallo lectura. Veo: ${textoCompleto.take(30)}...")
+                      RegistrarLog.agregar("Fallo. Precio: $precio, Kms: $kms")
                   }
               }
 
@@ -347,7 +352,10 @@ jobs:
               private fun mostrarVentanaFlotante() {
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager; val v = (getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater).inflate(R.layout.floating_toggle, null)
                   val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, android.graphics.PixelFormat.TRANSLUCENT)
-                  params.gravity = android.view.Gravity.TOP; params.x = 50; params.y = 600 // Lo bajé para que no estorbe
+                  // Mover a la esquina inferior derecha para que no estorbe
+                  params.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+                  params.x = 50
+                  params.y = 300
                   v.findViewById<Switch>(R.id.switchBot).isChecked = botActivo
                   v.findViewById<Switch>(R.id.switchBot).setOnCheckedChangeListener { _, c -> setBotActivo(c) }
                   wm.addView(v, params); ventana = v
