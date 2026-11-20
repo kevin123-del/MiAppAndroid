@@ -1,3 +1,4 @@
+
 name: Build APK
 
 on:
@@ -19,16 +20,15 @@ jobs:
           java-version: '17'
 
       - name: Instalar Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@v3
 
       - name: Instalar componentes Android
         run: |
+          yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.7'
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Crear estructura
         run: |
@@ -99,11 +99,6 @@ jobs:
                   jvmTarget = '17'
               }
           }
-
-          dependencies {
-              implementation 'androidx.core:core-ktx:1.13.1'
-              implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
-          }
           EOF
 
       - name: Crear Manifest
@@ -111,9 +106,6 @@ jobs:
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-
               <application
                   android:allowBackup="true"
                   android:label="Bot InDrive"
@@ -132,17 +124,14 @@ jobs:
                       android:name=".InDriveAccessibilityService"
                       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
                       android:exported="true"
-                      android:label="Analizador InDrive">
-
+                      android:label="Lector InDrive">
                       <intent-filter>
                           <action android:name="android.accessibilityservice.AccessibilityService"/>
                       </intent-filter>
-
                       <meta-data
                           android:name="android.accessibilityservice"
                           android:resource="@xml/accessibility_service_config"/>
                   </service>
-
               </application>
           </manifest>
           EOF
@@ -153,10 +142,10 @@ jobs:
           <resources>
               <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#FF9800</item>
-                  <item name="android:windowLightStatusBar">true</item>
-                  <item name="android:statusBarColor">#FFFFFF</item>
-                  <item name="android:navigationBarColor">#FFFFFF</item>
+                  <item name="android:colorAccent">#6C63FF</item>
+                  <item name="android:statusBarColor">#171A2B</item>
+                  <item name="android:navigationBarColor">#171A2B</item>
+                  <item name="android:windowLightStatusBar">false</item>
               </style>
           </resources>
           EOF
@@ -172,117 +161,51 @@ jobs:
               android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds"
               android:canRetrieveWindowContent="true"
               android:canPerformGestures="false"
-              android:notificationTimeout="300"
+              android:notificationTimeout="250"
               android:packageNames="sinet.startup.inDriver"/>
           EOF
 
-      - name: Crear modelos y motor de decisiones
+      - name: Crear motor de decisiones
         run: |
-          cat > app/src/main/java/com/tuusuario/miapp/Modelos.kt <<'EOF'
-          package com.tuusuario.miapp
-
-          data class Ajustes(
-              val maxRecogida: Double = 3.0,
-              val valorKm: Int = 1200,
-              val minimoOferta: Int = 4800,
-              val minimoIndrive: Int = 4000,
-              val maxRecogidaMinima: Double = 2.0,
-              val maxViajeMinimo: Double = 2.0,
-              val maxViajeCorto: Double = 2.0
-          )
-
-          data class Solicitud(
-              val precio: Int,
-              val recogidaKm: Double,
-              val viajeKm: Double,
-              val identificador: String
-          )
-
-          enum class Accion {
-              ACEPTAR, CONTRAOFERTAR, DESCARTAR, DATOS_INCOMPLETOS
-          }
-
-          data class Decision(
-              val accion: Accion,
-              val monto: Int,
-              val motivo: String,
-              val puntuacion: Double = 0.0
-          )
-          EOF
-
           cat > app/src/main/java/com/tuusuario/miapp/DecisionEngine.kt <<'EOF'
           package com.tuusuario.miapp
 
           import kotlin.math.ceil
 
+          data class Solicitud(
+              val precio: Int,
+              val recogida: Double,
+              val viaje: Double
+          )
+
+          data class Decision(
+              val accion: String,
+              val monto: Int,
+              val motivo: String
+          )
+
           object DecisionEngine {
-
-              fun redondearCentena(valor: Double): Int {
-                  return (ceil(valor / 100.0) * 100).toInt()
-              }
-
-              fun decidir(s: Solicitud, a: Ajustes): Decision {
-
-                  if (
-                      s.precio <= 0 ||
-                      s.recogidaKm < 0 ||
-                      s.viajeKm <= 0
-                  ) {
-                      return Decision(
-                          Accion.DATOS_INCOMPLETOS,
-                          0,
-                          "Datos inválidos"
-                      )
+              fun decidir(s: Solicitud, maxRecogida: Double): Decision {
+                  if (s.precio <= 0 || s.recogida < 0 || s.viaje <= 0) {
+                      return Decision("SIN DATOS", 0, "Datos inválidos")
                   }
 
-                  if (s.recogidaKm > a.maxRecogida) {
-                      return Decision(
-                          Accion.DESCARTAR,
-                          0,
-                          "Recogida supera el máximo permitido"
-                      )
+                  if (s.recogida > maxRecogida) {
+                      return Decision("DESCARTAR", 0, "Recogida superior al límite")
                   }
 
-                  val carreraMinima =
-                      s.recogidaKm <= a.maxRecogidaMinima &&
-                      s.viajeKm <= a.maxViajeMinimo
-
-                  if (carreraMinima && s.precio >= a.minimoIndrive) {
-                      return Decision(
-                          Accion.ACEPTAR,
-                          s.precio,
-                          "Tarifa mínima: recogida y viaje de máximo 2 km"
-                      )
+                  if (s.recogida <= 2.0 && s.viaje <= 2.0 &&
+                      s.precio >= 4000) {
+                      return Decision("ACEPTAR", s.precio, "Excepción de tarifa mínima")
                   }
 
-                  val calculado = s.viajeKm * a.valorKm
-                  val objetivo = maxOf(
-                      calculado,
-                      a.minimoOferta.toDouble()
-                  )
-                  val monto = redondearCentena(objetivo)
+                  val calculo = maxOf(s.viaje * 1200.0, 4800.0)
+                  val objetivo = (ceil(calculo / 100.0) * 100).toInt()
 
-                  if (s.precio >= monto) {
-                      return Decision(
-                          Accion.ACEPTAR,
-                          s.precio,
-                          "El pasajero ofrece el valor objetivo o más"
-                      )
-                  }
-
-                  return Decision(
-                      Accion.CONTRAOFERTAR,
-                      monto,
-                      "Oferta inferior al valor calculado"
-                  )
-              }
-
-              fun rentabilidad(s: Solicitud): Double {
-                  val kmTotal = s.recogidaKm + s.viajeKm
-                  return if (kmTotal > 0) {
-                      s.precio.toDouble() / kmTotal
+                  return if (s.precio >= objetivo) {
+                      Decision("ACEPTAR", s.precio, "Oferta igual o superior al objetivo")
                   } else {
-                      0.0
+                      Decision("CONTRAOFERTAR", objetivo, "Oferta inferior al objetivo")
                   }
               }
           }
@@ -299,34 +222,30 @@ jobs:
           import java.util.Locale
 
           object RegistrarLog {
-
               private const val PREFS = "historial_bot"
               private const val KEY = "entradas"
 
               fun agregar(context: Context, mensaje: String) {
                   val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                  val hora = SimpleDateFormat(
-                      "HH:mm:ss",
-                      Locale.getDefault()
-                  ).format(Date())
-
+                  val hora = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                   val anterior = prefs.getString(KEY, "") ?: ""
                   val nuevo = "[$hora] $mensaje\n$anterior"
-
-                  prefs.edit().putString(
-                      KEY,
-                      nuevo.lines().take(60).joinToString("\n")
-                  ).apply()
+                  prefs.edit().putString(KEY, nuevo.lines().take(100).joinToString("\n")).apply()
               }
 
               fun obtener(context: Context): String {
                   return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                       .getString(KEY, "") ?: ""
               }
+
+              fun limpiar(context: Context) {
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .edit().remove(KEY).apply()
+              }
           }
           EOF
 
-      - name: Crear servicio de accesibilidad
+      - name: Crear lector de InDrive
         run: |
           cat > app/src/main/java/com/tuusuario/miapp/InDriveAccessibilityService.kt <<'EOF'
           package com.tuusuario.miapp
@@ -334,7 +253,6 @@ jobs:
           import android.accessibilityservice.AccessibilityService
           import android.view.accessibility.AccessibilityEvent
           import android.view.accessibility.AccessibilityNodeInfo
-          import android.content.Context
 
           class InDriveAccessibilityService : AccessibilityService() {
 
@@ -344,162 +262,137 @@ jobs:
 
               private var activo = false
               private var ultimoContenido = ""
-              private var ultimoAnalisis = 0L
+              private var ultimoTiempo = 0L
 
               override fun onServiceConnected() {
                   super.onServiceConnected()
                   instancia = this
-                  RegistrarLog.agregar(this, "Servicio de accesibilidad conectado")
+                  RegistrarLog.agregar(this, "Lector conectado correctamente")
               }
 
               fun activar(valor: Boolean) {
                   activo = valor
                   RegistrarLog.agregar(
                       this,
-                      if (valor) "Análisis activado" else "Análisis pausado"
+                      if (valor) "Lectura activada" else "Lectura pausada"
                   )
               }
 
-              fun estaActivo(): Boolean = activo
+              fun estaActivo() = activo
 
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
                   if (!activo || event == null) return
                   if (event.packageName?.toString() != "sinet.startup.inDriver") return
 
                   val ahora = System.currentTimeMillis()
-                  if (ahora - ultimoAnalisis < 900) return
-                  ultimoAnalisis = ahora
+                  if (ahora - ultimoTiempo < 700) return
+                  ultimoTiempo = ahora
 
                   val root = rootInActiveWindow ?: return
-
                   try {
-                      val textos = mutableListOf<String>()
-                      recolectar(root, textos)
+                      val elementos = mutableListOf<String>()
+                      leerNodos(root, elementos)
 
-                      val contenido = textos.joinToString(" | ")
-                      if (contenido == ultimoContenido) return
+                      val contenido = elementos.distinct().joinToString("\n")
+                      if (contenido.isBlank() || contenido == ultimoContenido) return
                       ultimoContenido = contenido
 
-                      analizarPantalla(textos)
-
+                      procesarContenido(elementos.distinct())
                   } catch (e: Exception) {
-                      RegistrarLog.agregar(this, "Error de lectura: ${e.message}")
+                      RegistrarLog.agregar(this, "Error leyendo pantalla: ${e.message}")
                   } finally {
                       root.recycle()
                   }
               }
 
-              private fun recolectar(
+              private fun leerNodos(
                   nodo: AccessibilityNodeInfo,
-                  lista: MutableList<String>
+                  salida: MutableList<String>
               ) {
-                  nodo.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                      lista.add(it)
-                  }
+                  val texto = nodo.text?.toString()?.trim()
+                  if (!texto.isNullOrBlank()) salida.add(texto)
 
-                  nodo.contentDescription?.toString()?.trim()
-                      ?.takeIf { it.isNotEmpty() }?.let {
-                          lista.add(it)
-                      }
+                  val descripcion = nodo.contentDescription?.toString()?.trim()
+                  if (!descripcion.isNullOrBlank()) salida.add(descripcion)
 
                   for (i in 0 until nodo.childCount) {
                       val hijo = nodo.getChild(i) ?: continue
                       try {
-                          recolectar(hijo, lista)
+                          leerNodos(hijo, salida)
                       } finally {
                           hijo.recycle()
                       }
                   }
               }
 
-              private fun analizarPantalla(textos: List<String>) {
-                  val texto = textos.joinToString("\n")
-                  val precios = extraerPrecios(texto)
-
-                  val recogida = extraerDistanciaEtiquetada(
-                      texto,
-                      listOf("recogida", "recoger", "pickup")
-                  )
-
-                  val viaje = extraerDistanciaEtiquetada(
-                      texto,
-                      listOf("viaje", "recorrido", "destino", "trayecto")
-                  )
+              private fun procesarContenido(elementos: List<String>) {
+                  val texto = elementos.joinToString("\n")
+                  val precios = extraerPrecios(elementos)
+                  val distancias = extraerDistancias(elementos)
 
                   RegistrarLog.agregar(
                       this,
-                      "Pantalla detectada. Precios: ${precios.joinToString()}. " +
-                      "Recogida: ${recogida ?: "NO IDENTIFICADA"} km. " +
-                      "Viaje: ${viaje ?: "NO IDENTIFICADO"} km."
+                      "Pantalla leída: ${elementos.size} textos. " +
+                      "Precios: ${precios.joinToString()}. " +
+                      "Distancias: ${distancias.joinToString()} km."
                   )
 
-                  // No se adivinan distancias ni se realizan toques.
-                  if (precios.size != 1 || recogida == null || viaje == null) {
+                  // En la lista puede haber varias tarjetas.
+                  // No se mezclan sus precios ni sus distancias.
+                  if (precios.size != 1 || distancias.size < 2) {
                       RegistrarLog.agregar(
                           this,
-                          "Solicitud sin procesar: datos ambiguos o incompletos."
+                          "No se calcula: la pantalla no permite separar una solicitud con seguridad."
                       )
                       return
                   }
 
-                  val prefs = getSharedPreferences("ajustes_bot", Context.MODE_PRIVATE)
+                  val recogida = distancias.first()
+                  val viaje = distancias.last()
 
-                  val ajustes = Ajustes(
-                      maxRecogida = prefs.getFloat("max_recogida", 3f).toDouble(),
-                      valorKm = prefs.getInt("valor_km", 1200),
-                      minimoOferta = prefs.getInt("min_oferta", 4800),
-                      minimoIndrive = 4000,
-                      maxRecogidaMinima = 2.0,
-                      maxViajeMinimo = 2.0
-                  )
+                  val prefs = getSharedPreferences("ajustes_bot", MODE_PRIVATE)
+                  val maxRecogida = prefs.getFloat("max_recogida", 3f).toDouble()
 
                   val solicitud = Solicitud(
-                      precios[0],
-                      recogida,
-                      viaje,
-                      texto.hashCode().toString()
+                      precio = precios.first(),
+                      recogida = recogida,
+                      viaje = viaje
                   )
 
-                  val decision = DecisionEngine.decidir(solicitud, ajustes)
+                  val decision = DecisionEngine.decidir(solicitud, maxRecogida)
 
                   RegistrarLog.agregar(
                       this,
-                      "${decision.accion}: ${decision.motivo}. " +
-                      "Monto: $${decision.monto}"
+                      "Precio: $${solicitud.precio} | Recogida: ${solicitud.recogida} km | " +
+                      "Viaje: ${solicitud.viaje} km | ${decision.accion}: " +
+                      "${decision.motivo} | Objetivo: $${decision.monto}"
                   )
               }
 
-              private fun extraerPrecios(texto: String): List<Int> {
+              private fun extraerPrecios(elementos: List<String>): List<Int> {
                   val regex = Regex(
                       """(?i)(?:COL[$]|COP\s*[$]|[$])\s*([0-9][0-9.,]*)"""
                   )
-
-                  return regex.findAll(texto).mapNotNull {
-                      convertirNumero(it.groupValues[1])
-                  }.toList().distinct()
+                  return elementos.flatMap { linea ->
+                      regex.findAll(linea).mapNotNull {
+                          convertirNumero(it.groupValues[1])
+                      }.toList()
+                  }.distinct()
               }
 
-              private fun extraerDistanciaEtiquetada(
-                  texto: String,
-                  etiquetas: List<String>
-              ): Double? {
-                  for (etiqueta in etiquetas) {
-                      val regex = Regex(
-                          """(?i)${Regex.escape(etiqueta)}[^\n]{0,60}?([0-9]+(?:[.,][0-9]+)?)\s*km"""
-                      )
-
-                      val resultado = regex.find(texto)
-                      if (resultado != null) {
-                          return resultado.groupValues[1]
-                              .replace(",", ".").toDoubleOrNull()
-                      }
-                  }
-                  return null
+              private fun extraerDistancias(elementos: List<String>): List<Double> {
+                  val regex = Regex(
+                      """(?i)([0-9]+(?:[.,][0-9]+)?)\s*km"""
+                  )
+                  return elementos.flatMap { linea ->
+                      regex.findAll(linea).mapNotNull {
+                          it.groupValues[1].replace(",", ".").toDoubleOrNull()
+                      }.toList()
+                  }.distinct()
               }
 
               private fun convertirNumero(valor: String): Int? {
-                  val limpio = valor.replace(".", "").replace(",", "")
-                  return limpio.toIntOrNull()
+                  return valor.replace(".", "").replace(",", "").toIntOrNull()
               }
 
               override fun onInterrupt() {}
@@ -521,209 +414,219 @@ jobs:
           import android.content.Intent
           import android.provider.Settings
           import android.graphics.Color
+          import android.graphics.Typeface
+          import android.view.Gravity
           import android.widget.*
           import android.text.InputType
 
           class MainActivity : Activity() {
 
               private lateinit var estado: TextView
-              private lateinit var registro: TextView
-              private lateinit var maxRecogida: EditText
-              private lateinit var valorKm: EditText
-              private lateinit var minimo: EditText
+              private lateinit var historial: TextView
               private lateinit var interruptor: Switch
+              private lateinit var maxRecogida: EditText
 
               private val prefs by lazy {
                   getSharedPreferences("ajustes_bot", MODE_PRIVATE)
               }
 
+              private fun dp(v: Int): Int =
+                  (v * resources.displayMetrics.density).toInt()
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
 
-                  val layout = LinearLayout(this).apply {
+                  val fondo = Color.rgb(244, 246, 250)
+                  val oscuro = Color.rgb(25, 29, 48)
+                  val morado = Color.rgb(108, 99, 255)
+
+                  val raiz = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
-                      setPadding(24, 24, 24, 24)
-                      setBackgroundColor(Color.rgb(245, 245, 245))
+                      setBackgroundColor(fondo)
                   }
+
+                  val cabecera = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(22), dp(24), dp(22), dp(22))
+                      setBackgroundColor(oscuro)
+                  }
+
+                  cabecera.addView(TextView(this).apply {
+                      text = "BOT INDRIVE"
+                      textSize = 25f
+                      typeface = Typeface.DEFAULT_BOLD
+                      setTextColor(Color.WHITE)
+                  })
+
+                  cabecera.addView(TextView(this).apply {
+                      text = "Panel de control · Modo de prueba"
+                      textSize = 14f
+                      setTextColor(Color.LTGRAY)
+                  })
+
+                  raiz.addView(cabecera)
 
                   val scroll = ScrollView(this)
-                  scroll.addView(layout)
-                  setContentView(scroll)
-
-                  fun titulo(texto: String) {
-                      layout.addView(TextView(this).apply {
-                          text = texto
-                          textSize = 19f
-                          setTextColor(Color.BLACK)
-                          setPadding(0, 18, 0, 8)
-                      })
+                  val contenido = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(16), dp(16), dp(16), dp(24))
                   }
+                  scroll.addView(contenido)
+                  raiz.addView(scroll)
+                  setContentView(raiz)
 
-                  fun campo(
-                      nombre: String,
-                      valor: String,
-                      decimal: Boolean = false
-                  ): EditText {
-                      layout.addView(TextView(this).apply {
-                          text = nombre
-                          textSize = 14f
-                          setTextColor(Color.DKGRAY)
-                      })
-
-                      return EditText(this).apply {
-                          inputType = if (decimal) {
-                              InputType.TYPE_CLASS_NUMBER or
-                                  InputType.TYPE_NUMBER_FLAG_DECIMAL
-                          } else {
-                              InputType.TYPE_CLASS_NUMBER
-                          }
-                          setText(valor)
-                          layout.addView(this)
+                  fun tarjeta(): LinearLayout {
+                      val caja = LinearLayout(this).apply {
+                          orientation = LinearLayout.VERTICAL
+                          setPadding(dp(18), dp(16), dp(18), dp(16))
+                          setBackgroundColor(Color.WHITE)
                       }
+                      val parametros = LinearLayout.LayoutParams(
+                          -1, -2
+                      ).apply {
+                          bottomMargin = dp(14)
+                      }
+                      contenido.addView(caja, parametros)
+                      return caja
                   }
 
-                  titulo("BOT INDRIVE - PRUEBAS")
+                  fun titulo(caja: LinearLayout, texto: String) {
+                      caja.addView(TextView(this).apply {
+                          text = texto
+                          textSize = 18f
+                          typeface = Typeface.DEFAULT_BOLD
+                          setTextColor(oscuro)
+                          setPadding(0, 0, 0, dp(12))
+                      })
+                  }
+
+                  val panel = tarjeta()
+                  titulo(panel, "Estado del lector")
 
                   estado = TextView(this).apply {
-                      text = "Modo de prueba"
-                      textSize = 16f
-                      setTextColor(Color.BLUE)
+                      text = "Esperando activación"
+                      textSize = 15f
+                      setTextColor(morado)
                   }
-                  layout.addView(estado)
+                  panel.addView(estado)
 
                   interruptor = Switch(this).apply {
-                      text = "Activar análisis de pantalla"
+                      text = "Analizar pantalla de InDrive"
+                      textSize = 15f
                       isChecked = false
                       setOnCheckedChangeListener { _, checked ->
                           InDriveAccessibilityService.instancia?.activar(checked)
-                          actualizarEstado()
+                          estado.text = if (checked)
+                              "LECTURA ACTIVADA · SIN ACCIONES AUTOMÁTICAS"
+                          else "LECTURA PAUSADA"
                       }
                   }
-                  layout.addView(interruptor)
+                  panel.addView(interruptor)
 
-                  titulo("Parámetros")
+                  val ajustes = tarjeta()
+                  titulo(ajustes, "Configuración")
 
-                  maxRecogida = campo(
-                      "Distancia máxima de recogida (km)",
-                      prefs.getFloat("max_recogida", 3f).toString(),
-                      true
-                  )
+                  ajustes.addView(TextView(this).apply {
+                      text = "Distancia máxima de recogida (km)"
+                      setTextColor(Color.DKGRAY)
+                  })
 
-                  valorKm = campo(
-                      "Valor por kilómetro (COP)",
-                      prefs.getInt("valor_km", 1200).toString()
-                  )
+                  maxRecogida = EditText(this).apply {
+                      inputType = InputType.TYPE_CLASS_NUMBER or
+                          InputType.TYPE_NUMBER_FLAG_DECIMAL
+                      setText(prefs.getFloat("max_recogida", 3f).toString())
+                  }
+                  ajustes.addView(maxRecogida)
 
-                  minimo = campo(
-                      "Mínimo de oferta (COP)",
-                      prefs.getInt("min_oferta", 4800).toString()
-                  )
+                  ajustes.addView(TextView(this).apply {
+                      text = "Tarifa por kilómetro: $1.200\n" +
+                          "Mínimo deseado: $4.800\n" +
+                          "Tarifa mínima especial: $4.000\n" +
+                          "Excepción: recogida y viaje hasta 2 km\n" +
+                          "Redondeo: siguiente centena"
+                      textSize = 14f
+                      setTextColor(Color.DKGRAY)
+                      setPadding(0, dp(12), 0, dp(12))
+                  })
 
-                  val guardar = Button(this).apply {
+                  ajustes.addView(Button(this).apply {
                       text = "GUARDAR CONFIGURACIÓN"
                       setOnClickListener {
                           val max = maxRecogida.text.toString()
                               .replace(",", ".").toFloatOrNull()
-                          val km = valorKm.text.toString().toIntOrNull()
-                          val min = minimo.text.toString().toIntOrNull()
-
-                          if (
-                              max == null || km == null || min == null ||
-                              max <= 0 || km <= 0 || min <= 0
-                          ) {
+                          if (max == null || max <= 0) {
                               Toast.makeText(
                                   this@MainActivity,
-                                  "Revisa los valores",
-                                  Toast.LENGTH_LONG
+                                  "Introduce una distancia válida",
+                                  Toast.LENGTH_SHORT
                               ).show()
-                              return@setOnClickListener
+                          } else {
+                              prefs.edit().putFloat("max_recogida", max).apply()
+                              Toast.makeText(
+                                  this@MainActivity,
+                                  "Configuración guardada",
+                                  Toast.LENGTH_SHORT
+                              ).show()
                           }
-
-                          prefs.edit()
-                              .putFloat("max_recogida", max)
-                              .putInt("valor_km", km)
-                              .putInt("min_oferta", min)
-                              .apply()
-
-                          Toast.makeText(
-                              this@MainActivity,
-                              "Configuración guardada",
-                              Toast.LENGTH_SHORT
-                          ).show()
                       }
-                  }
-                  layout.addView(guardar)
+                  })
 
-                  val accesibilidad = Button(this).apply {
-                      text = "ACTIVAR ACCESIBILIDAD"
+                  ajustes.addView(Button(this).apply {
+                      text = "CONFIGURAR ACCESIBILIDAD"
                       setOnClickListener {
-                          startActivity(
-                              Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                          )
+                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                       }
-                  }
-                  layout.addView(accesibilidad)
+                  })
 
-                  titulo("Reglas de prueba")
-
-                  layout.addView(TextView(this).apply {
-                      text = """
-                          Tarifa por km: $1.200
-                          Mínimo deseado: $4.800
-                          Tarifa mínima InDrive: $4.000
-                          Recogida máxima especial: 2 km
-                          Viaje máximo especial: 2 km
-                          Redondeo: hacia arriba cada $100
-
-                          Las carreras de tarifa mínima solo se aceptan
-                          si ambas distancias son de máximo 2 km.
-
-                          Las demás carreras se calculan con:
-                          kilómetros del viaje x $1.200.
-
-                          El límite general de recogida se configura arriba.
-                          Esta versión solo analiza y registra.
-                      """.trimIndent()
+                  val pruebas = tarjeta()
+                  titulo(pruebas, "Reglas de cálculo")
+                  pruebas.addView(TextView(this).apply {
+                      text = "El cálculo usa únicamente los kilómetros del viaje. " +
+                          "La distancia de recogida se usa para comprobar el límite. " +
+                          "Las solicitudes con datos ambiguos no se procesan."
                       textSize = 14f
                       setTextColor(Color.DKGRAY)
                   })
 
-                  titulo("Historial")
+                  val cajaHistorial = tarjeta()
+                  titulo(cajaHistorial, "Registro de actividad")
 
-                  registro = TextView(this).apply {
+                  historial = TextView(this).apply {
                       textSize = 12f
-                      typeface = android.graphics.Typeface.MONOSPACE
-                      setTextColor(Color.GREEN)
-                      setBackgroundColor(Color.BLACK)
-                      setPadding(12, 12, 12, 12)
+                      typeface = Typeface.MONOSPACE
+                      setTextColor(Color.rgb(80, 230, 130))
+                      setBackgroundColor(Color.rgb(20, 23, 29))
+                      setPadding(dp(12), dp(12), dp(12), dp(12))
+                      text = "(Todavía no hay registros)"
                   }
-                  layout.addView(registro)
+                  cajaHistorial.addView(historial)
 
-                  val refrescar = Button(this).apply {
+                  cajaHistorial.addView(Button(this).apply {
                       text = "ACTUALIZAR REGISTRO"
-                      setOnClickListener { actualizarRegistro() }
-                  }
-                  layout.addView(refrescar)
+                      setOnClickListener { actualizarHistorial() }
+                  })
 
-                  actualizarRegistro()
+                  cajaHistorial.addView(Button(this).apply {
+                      text = "BORRAR REGISTRO"
+                      setOnClickListener {
+                          RegistrarLog.limpiar(this@MainActivity)
+                          actualizarHistorial()
+                      }
+                  })
               }
 
-              private fun actualizarEstado() {
-                  estado.text = if (interruptor.isChecked) {
-                      "ANÁLISIS ACTIVADO - SIN TOQUES AUTOMÁTICOS"
-                  } else {
-                      "ANÁLISIS PAUSADO"
-                  }
-              }
-
-              private fun actualizarRegistro() {
-                  registro.text = RegistrarLog.obtener(this)
-                      .ifBlank { "(Sin registros todavía)" }
+              private fun actualizarHistorial() {
+                  historial.text = RegistrarLog.obtener(this)
+                      .ifBlank { "(Todavía no hay registros)" }
               }
 
               override fun onResume() {
                   super.onResume()
-                  if (::registro.isInitialized) actualizarRegistro()
+                  if (::historial.isInitialized) actualizarHistorial()
+                  if (::interruptor.isInitialized) {
+                      interruptor.isChecked =
+                          InDriveAccessibilityService.instancia?.estaActivo() == true
+                  }
               }
           }
           EOF
@@ -733,26 +636,14 @@ jobs:
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
 
-      - name: Comprobar archivos del proyecto
-        run: |
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/com/tuusuario/miapp/MainActivity.kt
-          test -f gradlew
-          echo "Archivos del proyecto encontrados."
-
       - name: Compilar APK
         run: |
-          ./gradlew --no-daemon assembleDebug
-
-      - name: Verificar APK
-        run: |
+          ./gradlew --no-daemon clean assembleDebug
           test -f app/build/outputs/apk/debug/app-debug.apk
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Guardar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: Bot-InDrive-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 7
